@@ -3,48 +3,56 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GhostContext</title>
+  <title>潜忆</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <div class="container">
+  <!-- Unsupported site overlay -->
+  <div id="unsupported" class="unsupported" hidden>
+    <p class="unsupported-icon">🚫</p>
+    <p class="unsupported-text">当前网站不支持</p>
+    <p class="unsupported-hint">请在 chat.deepseek.com 上使用</p>
+  </div>
+
+  <div class="container" id="main" hidden>
+    <!-- Header -->
     <header>
-      <h1>👻 GhostContext</h1>
-      <label class="toggle">
-        <input type="checkbox" id="enabled" checked />
-        <span class="slider"></span>
-      </label>
+      <h1>潜忆</h1>
+      <button id="settings" class="icon-btn" title="设置">⚙️</button>
     </header>
 
-    <section class="form">
-      <label for="bio">个人简介</label>
-      <textarea id="bio" rows="3" placeholder="你是谁、做什么、技术栈、当前项目…"></textarea>
-
-      <label for="persona">AI 人设</label>
-      <textarea id="persona" rows="3" placeholder="希望 AI 扮演什么角色，如：资深后端工程师…"></textarea>
-
-      <label for="style">风格要求</label>
-      <textarea id="style" rows="2" placeholder="语气、格式、长度偏好，如：简洁专业、代码优先…"></textarea>
-
-      <label for="reinjectInterval">重新注入间隔 <small>(轮数，0=仅新会话)</small></label>
-      <input type="number" id="reinjectInterval" min="0" max="100" value="10" />
+    <!-- Injection Mode -->
+    <section class="section">
+      <label class="section-label">传递深度</label>
+      <div class="mode-bar" id="modeBar"></div>
+      <p class="mode-desc" id="modeDesc"></p>
     </section>
 
-    <footer>
-      <button id="save">保存</button>
-      <div class="debug-area">
-        <label class="debug-toggle">
-          <input type="checkbox" id="debug" />
-          <span>调试</span>
-        </label>
-        <label class="debug-toggle" id="show-injection-label" style="display:none">
-          <input type="checkbox" id="showInjection" />
-          <span>显示注入</span>
-        </label>
+    <!-- Identity selector -->
+    <section class="section">
+      <div class="section-header">
+        <label class="section-label">👤 用户画像</label>
+        <button id="editIdentity" class="edit-link">编辑 ↗</button>
       </div>
-    </footer>
+      <div class="slot-bar" id="identityBar"></div>
+    </section>
 
-    <div id="status" class="status"></div>
+    <!-- Persona selector -->
+    <section class="section">
+      <div class="section-header">
+        <label class="section-label">🤖 AI 人设</label>
+        <div class="section-actions">
+          <button id="importPersona" class="edit-link" title="导入潜忆匙">🔑 导入</button>
+          <button id="editPersona" class="edit-link">编辑 ↗</button>
+        </div>
+      </div>
+      <div class="slot-bar" id="personaBar"></div>
+    </section>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" hidden>
+    <span id="toastText"></span>
   </div>
 
   <script src="./main.ts" type="module"></script>

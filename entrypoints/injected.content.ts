@@ -3,18 +3,19 @@
  *
  * Responsibilities:
  *   1. Override window.fetch & XMLHttpRequest to intercept outgoing chat requests
- *   2. Prepend user profile injection block to the message payload
+ *   2. Inject context (identity + persona + time) into the message payload
+ *   3. Parse SSE response stream for info-control blocks
  *
  * Communication:
- *   Receives profile data from the ISOLATED-world content script via postMessage.
+ *   Receives InjectionContext from the ISOLATED-world content script via postMessage.
  *   Cannot access browser.storage directly (page context has no extension APIs).
  */
 
 import { deepseekAdapter } from '../lib/adapters/deepseek';
-import { isProfileEmpty } from '../lib/profile';
-import { MSG, DEFAULT_REINJECT_INTERVAL } from '../lib/constants';
+import { isContextEmpty } from '../lib/profile';
+import { MSG } from '../lib/constants';
 import { StreamParser } from '../lib/stream-parser';
-import type { UserProfile } from '../lib/profile';
+import type { InjectionContext } from '../lib/profile';
 import type { PlatformAdapter } from '../lib/adapters/types';
 
 export default defineContentScript({
@@ -23,14 +24,9 @@ export default defineContentScript({
   runAt: 'document_start',
 
   main() {
-    console.log('[GhostContext] 🚀 MAIN world script executing...');
-
     const adapter: PlatformAdapter = deepseekAdapter;
 
-    let profile: UserProfile | null = null;
-    let enabled = true;
-    let debug = false;
-    let reinjectInterval = DEFAULT_REINJECT_INTERVAL;
+    let ctx: InjectionContext | null = null;
 
     /**
      * Injection frequency control.
@@ -41,37 +37,22 @@ export default defineContentScript({
 
     /** Decide whether this request needs injection */
     function shouldInject(body: Record<string, unknown>): boolean {
+      if (!ctx || ctx.mode === 'off') return false;
+
+      const reinjectInterval = ctx.reinjectInterval;
       const sessionId = body.chat_session_id as string | undefined;
       const parentId = (body.parent_message_id as number) ?? 0;
 
-      if (!sessionId) {
-        // Can't identify session — inject to be safe
-        return true;
-      }
+      if (!sessionId) return true;
 
       const lastInjectedAt = injectionLog.get(sessionId);
 
-      if (lastInjectedAt === undefined) {
-        // New session — always inject
-        if (debug) console.log('[GhostContext] New session detected:', sessionId.slice(0, 8));
-        return true;
-      }
+      if (lastInjectedAt === undefined) return true;
 
-      if (reinjectInterval === 0) {
-        // 0 = only inject on new session
-        if (debug) console.log('[GhostContext] Skip: interval=0, already injected in this session');
-        return false;
-      }
+      if (reinjectInterval === 0) return false;
 
       const turnsSince = parentId - lastInjectedAt;
-      if (turnsSince >= reinjectInterval * 2) {
-        // parentId increments by 2 per round (user + assistant)
-        if (debug) console.log(`[GhostContext] Re-inject: ${turnsSince / 2} turns since last injection`);
-        return true;
-      }
-
-      if (debug) console.log(`[GhostContext] Skip: only ${turnsSince / 2} turns since last injection`);
-      return false;
+      return turnsSince >= reinjectInterval * 2;
     }
 
     /** Record that we injected for this session */
@@ -114,17 +95,12 @@ export default defineContentScript({
       }
     }
 
-    /* ── Receive profile from isolated world ── */
+    /* ── Receive context from isolated world ── */
     window.addEventListener('message', (e) => {
       if (e.source !== window) return;
       if (e.data?.type !== MSG.PROFILE_UPDATE) return;
 
-      profile = e.data.profile ?? null;
-      enabled = e.data.enabled ?? true;
-      debug = e.data.debug ?? false;
-      reinjectInterval = e.data.reinjectInterval ?? DEFAULT_REINJECT_INTERVAL;
-
-      console.log('[GhostContext] Profile received:', profile?.bio?.slice(0, 20) || '(empty)', '| enabled:', enabled, '| debug:', debug);
+      ctx = e.data.ctx ?? null;
     });
 
     /* ── Fetch interception ── */
@@ -137,39 +113,31 @@ export default defineContentScript({
       try {
         const url = getUrl(input);
 
-        // Debug: log all API calls
-        if (debug && url.includes('/api')) {
-          console.log('[GhostContext] 🔍 fetch:', url);
-        }
-
-        if (enabled && profile && !isProfileEmpty(profile) && init?.body) {
+        if (ctx && ctx.mode !== 'off' && !isContextEmpty(ctx) && init?.body) {
           const body = await extractBody(init.body);
 
           if (body && adapter.shouldIntercept(url, body) && shouldInject(body)) {
-            const modified = adapter.modifyRequestBody(body, profile);
+            const modified = adapter.modifyRequestBody(body, ctx);
             init = { ...init, body: JSON.stringify(modified) };
             recordInjection(body);
 
-            console.log('[GhostContext] ✅ Intercepted:', url);
-            if (debug) {
-              console.log('[GhostContext] Modified prompt with ghost-ml wrapper');
-            }
+            console.log('[Qianyi] ✅ Intercepted:', url, `[${ctx.mode}]`);
           }
-        } else if (init?.body) {
-          // Disabled: inject time only (if platform doesn't know it)
+        } else if (ctx && ctx.mode === 'time' && init?.body) {
+          // Time-only mode
           if (!adapter.capabilities.knowsCurrentTime) {
             const body = await extractBody(init.body);
             if (body && adapter.shouldIntercept(url, body)) {
               const modified = adapter.modifyRequestBodyTimeOnly(body);
               if (modified) {
                 init = { ...init, body: JSON.stringify(modified) };
-                if (debug) console.log('[GhostContext] ⏰ Time-only injection');
+
               }
             }
           }
         }
       } catch (err) {
-        console.error('[GhostContext] Fetch override error (pass-through):', err);
+        console.error('[Qianyi] Fetch override error (pass-through):', err);
       }
 
       return _fetch.call(this, input, init);
@@ -188,10 +156,6 @@ export default defineContentScript({
       try {
         const url: string = (this as any).__ghostUrl || '';
 
-        if (debug && url.includes('/api')) {
-          console.log('[GhostContext] 🔍 XHR:', url);
-        }
-
         // Check if this is a chat completion request
         let isChatRequest = false;
         let parsed: Record<string, unknown> | undefined;
@@ -208,30 +172,28 @@ export default defineContentScript({
 
         // Determine injection type and set up response monitor
         if (isChatRequest && parsed) {
-          const hasProfile = !!(enabled && profile && !isProfileEmpty(profile));
+          const canInject = !!(ctx && ctx.mode !== 'off' && !isContextEmpty(ctx));
 
-          if (hasProfile && shouldInject(parsed)) {
-            // Full injection
-            const modified = adapter.modifyRequestBody(parsed, profile);
+          if (canInject && shouldInject(parsed)) {
+            const modified = adapter.modifyRequestBody(parsed, ctx!);
             recordInjection(parsed);
-            console.log('[GhostContext] ✅ Intercepted (XHR):', url);
+            console.log('[Qianyi] ✅ Intercepted (XHR):', url, `[${ctx!.mode}]`);
             setupResponseMonitor(this, true);
             return _xhrSend.call(this, JSON.stringify(modified));
-          } else if (!hasProfile && !adapter.capabilities.knowsCurrentTime) {
-            // Profile empty/disabled — time-only injection
+          } else if (ctx && ctx.mode === 'time' && !adapter.capabilities.knowsCurrentTime) {
+            // Time-only mode
             const modified = adapter.modifyRequestBodyTimeOnly(parsed);
             if (modified) {
-              if (debug) console.log('[GhostContext] ⏰ Time-only injection (XHR)');
               setupResponseMonitor(this, false);
               return _xhrSend.call(this, JSON.stringify(modified));
             }
           }
 
-          // Chat request but no injection (frequency control / profile available but skipped)
+          // Chat request but no injection (frequency control / mode skip)
           setupResponseMonitor(this, false);
         }
       } catch (err) {
-        console.error('[GhostContext] XHR override error (pass-through):', err);
+        console.error('[Qianyi] XHR override error (pass-through):', err);
       }
 
       return _xhrSend.call(this, body);
@@ -241,19 +203,11 @@ export default defineContentScript({
      * Attach progress/loadend listeners to an intercepted XHR
      * to parse the SSE response stream for info-control blocks.
      */
-    let monitorCount = 0;
     function setupResponseMonitor(xhr: XMLHttpRequest, injected: boolean) {
-      const monitorId = ++monitorCount;
       const parser = new StreamParser();
-      const parseState: Record<string, unknown> & { partial: string } = { partial: '', debug };
+      const parseState: Record<string, unknown> & { partial: string } = { partial: '' };
       let lastLength = 0;
       let reported = false;
-      let totalChunks = 0;
-      let totalDeltas = 0;
-
-      if (debug) {
-        console.log(`[GhostContext] 🔊 Monitor #${monitorId} attached | injected: ${injected}`);
-      }
 
       xhr.addEventListener('progress', () => {
         try {
@@ -262,33 +216,17 @@ export default defineContentScript({
 
           const chunk = full.slice(lastLength);
           lastLength = full.length;
-          totalChunks++;
-
-          // Debug: log first 10 raw SSE chunks
-          if (debug && totalChunks <= 10) {
-            console.log(`[GhostContext] 📡 [M${monitorId}] SSE chunk #${totalChunks - 1}:`, chunk.slice(0, 500));
-          }
 
           const deltas = adapter.extractContentDeltas(chunk, parseState);
-
-          if (deltas.length > 0) {
-            totalDeltas += deltas.length;
-            if (debug && totalDeltas <= 10) {
-              console.log(`[GhostContext] 📝 [M${monitorId}] Deltas (${deltas.length}):`, deltas.map(d => d.slice(0, 50)).join(' | '));
-            }
-          }
 
           for (const delta of deltas) {
             const result = parser.feed(delta);
             if (result && !reported) {
               reported = true;
-              if (debug) console.log('[GhostContext] 📦 Info-control extracted:', result);
               window.postMessage({ type: MSG.INFO_CONTROL, data: result }, '*');
             }
           }
-        } catch (err) {
-          if (debug) console.error('[GhostContext] Response monitor error:', err);
-        }
+        } catch { /* ignore parse errors */ }
       });
 
       xhr.addEventListener('loadend', () => {
@@ -303,32 +241,15 @@ export default defineContentScript({
         const result = parser.extracted;
         if (result && !reported) {
           reported = true;
-          if (debug) console.log('[GhostContext] 📦 Info-control extracted (final):', result);
           window.postMessage({ type: MSG.INFO_CONTROL, data: result }, '*');
         }
 
-        if (debug) {
-          const fragTypes = parseState.fragmentTypes as Map<number, string> | undefined;
-          const fragObj = fragTypes ? Object.fromEntries(fragTypes) : {};
-          console.log(
-            `[GhostContext] 📊 [M${monitorId}] Summary:`,
-            `\n  injected: ${injected}`,
-            `\n  xhr.status: ${xhr.status}`,
-            `\n  totalChunks: ${totalChunks}`,
-            `\n  totalDeltas: ${totalDeltas}`,
-            `\n  fragmentTypes:`, fragObj,
-            `\n  accumulatedText: ${parser.text.length} chars`,
-            `\n  infoControlFound: ${!!result}`,
-            parser.text.length > 0 ? `\n  lastText: ...${parser.text.slice(-200)}` : '',
-          );
-        }
-
-        if (debug && injected && !result) {
-          console.warn('[GhostContext] ⚠️  Injected but no info-control block found — model may have ignored the template.');
+        if (injected && !result) {
+          console.warn('[Qianyi] ⚠️ No info-control block found — model may have ignored the template.');
         }
       });
     }
 
-    console.log('[GhostContext] 🚀 Interceptors installed (fetch + XHR)');
+    console.log('[Qianyi] 🚀 Interceptors installed (fetch + XHR)');
   },
 });

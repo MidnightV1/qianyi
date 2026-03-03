@@ -1,5 +1,5 @@
 {
-  "name": "ghost-context",
+  "name": "qianyi",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,9 +10,14 @@
     "postinstall": "wxt prepare"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "spawn-sync"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "spawn-sync"
+    ]
   },
   "devDependencies": {
+    "jsqr": "^1.4.0",
+    "qrcode-generator": "^2.0.4",
     "typescript": "^5.9.3",
     "wxt": "^0.20.18"
   }

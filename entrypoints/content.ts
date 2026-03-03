@@ -2,97 +2,98 @@
  * ISOLATED-world content script.
  *
  * Responsibilities:
- *   1. Read user profile from chrome.storage and relay it to the MAIN-world
- *      interceptor via postMessage (bridge between extension APIs ↔ page JS)
- *   2. Watch for storage changes and re-send profile in real-time
- *   3. DOM cleaning — hide injection blocks that appear in rendered messages
- *   4. Debug panel — show current injection text when "显示注入" is on
+ *   1. Load GhostConfig from chrome.storage, resolve InjectionContext,
+ *      and relay it to the MAIN-world interceptor via postMessage
+ *   2. Watch for storage changes and re-send context in real-time
+ *   3. Handle info-control bio writeback (update active identity slot)
+ *   4. DOM cleaning — hide injection blocks that appear in rendered messages
+ *   5. Debug panel — show current injection text when toggled on
  */
 
 import { deepseekAdapter } from '../lib/adapters/deepseek';
 import { formatInjection } from '../lib/injection';
-import { MSG, STORE, DEFAULT_REINJECT_INTERVAL, RESP_TAG } from '../lib/constants';
-import type { UserProfile } from '../lib/profile';
+import { MSG, STORE, RESP_TAG } from '../lib/constants';
+import {
+  loadConfig, saveConfig, resolveContext,
+  type GhostConfig, type InjectionContext,
+} from '../lib/profile';
+import { appendGrowth } from '../lib/growth';
 
 export default defineContentScript({
   matches: ['*://chat.deepseek.com/*'],
   runAt: 'document_idle',
 
   async main() {
-    /* ── Load settings ── */
-    const settings = await browser.storage.local.get([
-      STORE.PROFILE,
-      STORE.ENABLED,
-      STORE.DEBUG,
-      STORE.SHOW_INJECTION,
-      STORE.REINJECT_INTERVAL,
-    ]);
-
-    let profile: UserProfile = settings[STORE.PROFILE] ?? {
-      bio: '',
-      persona: '',
-      style: '',
-    };
-    let enabled: boolean = settings[STORE.ENABLED] ?? true;
-    let debug: boolean = settings[STORE.DEBUG] ?? false;
-    let showInjection: boolean = settings[STORE.SHOW_INJECTION] ?? false;
-    let reinjectInterval: number = settings[STORE.REINJECT_INTERVAL] ?? DEFAULT_REINJECT_INTERVAL;
+    /* ── Load config (with v1→v2 auto-migration) ── */
+    let config = await loadConfig();
+    let ctx = resolveContext(config);
 
     // Initial push to MAIN world
-    sendToPage(profile, enabled, debug, reinjectInterval);
+    sendToPage(ctx);
 
     // Debug panel
-    updateDebugPanel(showInjection, profile);
+    updateDebugPanel(config.showInjection, ctx);
 
     /* ── Listen for info-control data from MAIN world ── */
     window.addEventListener('message', (e) => {
       if (e.source !== window) return;
       if (e.data?.type !== MSG.INFO_CONTROL) return;
 
-      const data = e.data.data as { needUpdate: boolean; updatedBio?: string };
-      if (debug) console.log('[GhostContext] 📦 Info-control received:', data);
+      const data = e.data.data as { needUpdate: boolean; updatedBio?: string; needUpdateSoul: boolean; updatedSoul?: string };
 
-      if (data.needUpdate && data.updatedBio) {
-        // Auto-update bio in profile
-        profile = { ...profile, bio: data.updatedBio };
-        browser.storage.local.set({ [STORE.PROFILE]: profile });
-        if (debug) console.log('[GhostContext] ✏️ Bio auto-updated:', data.updatedBio.slice(0, 50));
+      let changed = false;
 
-        // Re-send updated profile to MAIN world
-        sendToPage(profile, enabled, debug, reinjectInterval);
-        updateDebugPanel(showInjection, profile);
+      // Auto-update bio in the active identity slot
+      if (data.needUpdate && data.updatedBio && config.activeIdentity >= 0) {
+        const slot = config.identities[config.activeIdentity];
+        if (slot) {
+          const before = slot.bio;
+          slot.bio = data.updatedBio;
+          changed = true;
+          console.log('[Qianyi] ✏️ Bio updated:', data.updatedBio.slice(0, 50));
+          appendGrowth({ ts: Date.now(), field: 'bio', slotId: slot.id, before, after: data.updatedBio, source: 'auto' });
+        }
+      }
+
+      // Auto-update soul in the active persona slot
+      if (data.needUpdateSoul && data.updatedSoul && config.activePersona >= 0) {
+        const personaSlot = config.personas[config.activePersona];
+        if (personaSlot) {
+          const before = personaSlot.soul;
+          personaSlot.soul = data.updatedSoul;
+          changed = true;
+          console.log('[Qianyi] ✏️ Soul updated:', data.updatedSoul.slice(0, 50));
+          appendGrowth({ ts: Date.now(), field: 'soul', slotId: personaSlot.id, before, after: data.updatedSoul, source: 'auto' });
+        }
+      }
+
+      if (changed) {
+        saveConfig(config);
+        ctx = resolveContext(config);
+        sendToPage(ctx);
+        updateDebugPanel(config.showInjection, ctx);
       }
     });
 
-    /* ── React to popup changes ── */
+    /* ── React to popup / options page changes ── */
     browser.storage.onChanged.addListener((changes) => {
-      if (changes[STORE.PROFILE]) profile = changes[STORE.PROFILE].newValue;
-      if (changes[STORE.ENABLED]) enabled = changes[STORE.ENABLED].newValue;
-      if (changes[STORE.DEBUG]) debug = changes[STORE.DEBUG].newValue;
-      if (changes[STORE.SHOW_INJECTION] != null) {
-        showInjection = changes[STORE.SHOW_INJECTION].newValue;
+      if (changes[STORE.CONFIG]) {
+        config = changes[STORE.CONFIG].newValue as GhostConfig;
+        ctx = resolveContext(config);
+        sendToPage(ctx);
+        updateDebugPanel(config.showInjection, ctx);
       }
-      if (changes[STORE.REINJECT_INTERVAL] != null) {
-        reinjectInterval = changes[STORE.REINJECT_INTERVAL].newValue;
-      }
-
-      sendToPage(profile, enabled, debug, reinjectInterval);
-      updateDebugPanel(showInjection, profile);
-
-      if (debug) console.log('[GhostContext] Settings updated, re-sent to page');
     });
 
     /* ── DOM cleaning ── */
     setupDOMCleaner();
-
-    if (debug) console.log('[GhostContext] Content script loaded');
   },
 });
 
 /* ── Helpers ── */
 
-function sendToPage(profile: UserProfile, enabled: boolean, debug: boolean, reinjectInterval: number) {
-  window.postMessage({ type: MSG.PROFILE_UPDATE, profile, enabled, debug, reinjectInterval }, '*');
+function sendToPage(ctx: InjectionContext) {
+  window.postMessage({ type: MSG.PROFILE_UPDATE, ctx }, '*');
 }
 
 function setupDOMCleaner() {
@@ -269,7 +270,7 @@ function setupDOMCleaner() {
 
 const PANEL_ID = 'ghost-context-debug-panel';
 
-function updateDebugPanel(show: boolean, profile: UserProfile) {
+function updateDebugPanel(show: boolean, ctx: InjectionContext) {
   let panel = document.getElementById(PANEL_ID);
 
   if (!show) {
@@ -302,8 +303,8 @@ function updateDebugPanel(show: boolean, profile: UserProfile) {
     document.body.appendChild(panel);
   }
 
-  const injection = formatInjection(profile, '（用户输入将出现在此处）');
-  panel.innerHTML = `<div style="color:#ff9800;font-weight:bold;margin-bottom:8px">👻 当前注入结构</div><div style="color:#aaa">${escapeHtml(injection)}</div>`;
+  const injection = formatInjection(ctx, '（用户输入将出现在此处）');
+  panel.innerHTML = `<div style="color:#ff9800;font-weight:bold;margin-bottom:8px">潜忆 · 当前注入结构 [${ctx.mode}]</div><div style="color:#aaa">${escapeHtml(injection)}</div>`;
 }
 
 function escapeHtml(s: string): string {

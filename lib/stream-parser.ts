@@ -1,4 +1,4 @@
-import { INFO_CTRL_TAG, NEED_UPDATE_TAG, UPDATED_BIO_TAG, RESP_TAG } from './constants';
+import { INFO_CTRL_TAG, NEED_UPDATE_TAG, UPDATED_BIO_TAG, NEED_UPDATE_SOUL_TAG, UPDATED_SOUL_TAG, RESP_TAG } from './constants';
 
 /**
  * Data extracted from model's <info-control-ghost-ml> block.
@@ -6,6 +6,8 @@ import { INFO_CTRL_TAG, NEED_UPDATE_TAG, UPDATED_BIO_TAG, RESP_TAG } from './con
 export interface InfoControlData {
   needUpdate: boolean;
   updatedBio?: string;
+  needUpdateSoul: boolean;
+  updatedSoul?: string;
 }
 
 /**
@@ -111,6 +113,19 @@ export class StreamParser {
       updatedBio = bioMatch?.[1]?.trim();
     }
 
-    return { needUpdate, updatedBio };
+    const soulMatch = block.match(
+      new RegExp(`<${NEED_UPDATE_SOUL_TAG}>\\s*(true|false)\\s*</${NEED_UPDATE_SOUL_TAG}>`, 'i'),
+    );
+    const needUpdateSoul = soulMatch?.[1]?.toLowerCase() === 'true';
+
+    let updatedSoul: string | undefined;
+    if (needUpdateSoul) {
+      const soulContentMatch = block.match(
+        new RegExp(`<${UPDATED_SOUL_TAG}>([\\s\\S]*?)</${UPDATED_SOUL_TAG}>`),
+      );
+      updatedSoul = soulContentMatch?.[1]?.trim();
+    }
+
+    return { needUpdate, updatedBio, needUpdateSoul, updatedSoul };
   }
 }

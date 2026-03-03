@@ -1,7 +1,7 @@
 import type { PlatformAdapter } from './types';
 import { MAIN_TAG, USER_INPUT_TAG, RESP_TAG, INFO_CTRL_TAG, NEED_UPDATE_TAG, UPDATED_BIO_TAG } from '../constants';
 import { formatInjection, formatTimeOnlyInjection } from '../injection';
-import type { UserProfile } from '../profile';
+import type { InjectionContext } from '../profile';
 
 /**
  * DeepSeek Web Chat adapter (chat.deepseek.com)
@@ -44,11 +44,11 @@ export const deepseekAdapter: PlatformAdapter = {
 
   modifyRequestBody(
     body: Record<string, unknown>,
-    profile: UserProfile,
+    ctx: InjectionContext,
   ): Record<string, unknown> {
     // DeepSeek uses { prompt: "..." } — replace with full ghost-ml structure
     if (typeof body.prompt === 'string') {
-      return { ...body, prompt: formatInjection(profile, body.prompt) };
+      return { ...body, prompt: formatInjection(ctx, body.prompt) };
     }
 
     // Fallback: OpenAI-compatible messages array
@@ -56,7 +56,7 @@ export const deepseekAdapter: PlatformAdapter = {
       const msgs = body.messages as Array<{ role: string; content: string }>;
       for (let i = msgs.length - 1; i >= 0; i--) {
         if (msgs[i].role === 'user') {
-          msgs[i] = { ...msgs[i], content: formatInjection(profile, msgs[i].content) };
+          msgs[i] = { ...msgs[i], content: formatInjection(ctx, msgs[i].content) };
           break;
         }
       }
@@ -66,7 +66,7 @@ export const deepseekAdapter: PlatformAdapter = {
     // Generic fallback
     for (const key of ['message', 'content', 'query', 'input'] as const) {
       if (typeof body[key] === 'string') {
-        return { ...body, [key]: formatInjection(profile, body[key] as string) };
+        return { ...body, [key]: formatInjection(ctx, body[key] as string) };
       }
     }
 

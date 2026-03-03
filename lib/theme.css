@@ -1,0 +1,190 @@
+/* ══════════════════════════════════════════════════════════
+ *  潜忆 Qianyi — Theme Variables
+ *  Dark ("ink") + Light ("mist") dual theme system.
+ *  Imported by options/style.css & popup/style.css.
+ * ══════════════════════════════════════════════════════════ */
+
+/* ── Dark theme (default / explicit) ── */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surface — darkest → lightest */
+  --bg:         #0e1117;   /* page base */
+  --bg-raised:  #141820;   /* zone background */
+  --bg-card:    #1a2030;   /* card surface */
+  --bg-input:   #161c28;   /* input / slot field */
+  --bg-inset:   #111620;   /* deepest inset, slot-item */
+  --bg-overlay: rgba(14, 17, 23, 0.88);  /* sticky topbar */
+
+  /* Text — bright → dim */
+  --text:       #c8ced8;   /* primary */
+  --text-2:     #8790a2;   /* secondary — descriptions */
+  --text-3:     #5c6576;   /* tertiary — labels, hints */
+  --text-4:     #3c4454;   /* dimmed — placeholders, version */
+
+  /* Border */
+  --border:     rgba(200, 215, 240, 0.08);
+  --border-s:   rgba(200, 215, 240, 0.04);  /* subtle */
+
+  /* Accent: green — active, toggle, confirmed */
+  --accent:     #48b96c;
+  --accent-dim: rgba(72, 185, 108, 0.15);
+
+  /* Accent: blue — links, share, info */
+  --link:       #6aafef;
+  --link-hover: #8ac4f8;
+  --link-dim:   rgba(106, 175, 239, 0.12);
+
+  /* Accent: red — danger, delete */
+  --danger:     #e8695a;
+  --danger-dim: rgba(232, 105, 90, 0.12);
+
+  /* Accent: warm — "off" mode */
+  --warm:       #a88070;
+  --warm-dim:   rgba(168, 128, 112, 0.15);
+
+  /* Accent: gold — init, first-time */
+  --gold:       #d4a53c;
+  --gold-dim:   rgba(212, 165, 60, 0.10);
+
+  /* ── Zone: 忆 ── */
+  --yi-bg:      #141822;
+  --yi-card:    #1c2130;
+  --yi-slot:    #121620;
+  --yi-input:   #171c28;
+
+  /* ── Zone: 潜 ── */
+  --qian-from:     #0e1118;
+  --qian-to:       #090c12;
+  --qian-card:     rgba(14, 18, 28, 0.6);
+  --qian-glow-in:  rgba(50, 72, 136, 0.05);
+  --qian-glow-out: rgba(40, 60, 110, 0.04);
+  --qian-label:    #5a6580;
+
+  /* ── Depth bar ── */
+  --depth-bg:        rgba(13, 16, 23, 0.8);
+  --depth-text:      #3e4660;
+  --depth-hover:     #7a88a5;
+  --depth-active:    #c0d0f0;
+  --depth-active-bg: rgba(60, 80, 130, 0.18);
+  --depth-active-bd: rgba(100, 130, 200, 0.20);
+  --depth-glow:      rgba(140, 170, 230, 0.25);
+
+  /* ── Growth ── */
+  --g-init:       #d4a53c;
+  --g-init-dim:   rgba(212, 165, 60, 0.10);
+  --g-auto:       #5888cc;
+  --g-auto-dim:   rgba(88, 136, 204, 0.10);
+  --g-user:       #48b96c;
+  --g-user-dim:   rgba(72, 185, 108, 0.10);
+
+  /* ── Diff ── */
+  --diff-add:     #5cc86a;
+  --diff-add-bg:  rgba(92, 200, 106, 0.06);
+  --diff-del:     #e8695a;
+  --diff-del-bg:  rgba(232, 105, 90, 0.06);
+  --diff-eq:      #4a5268;
+
+  /* ── Toggle ── */
+  --toggle-track:    rgba(200, 215, 240, 0.06);
+  --toggle-thumb:    #505868;
+  --toggle-on-track: rgba(72, 185, 108, 0.30);
+  --toggle-on-thumb: #48b96c;
+
+  /* ── Toast ── */
+  --toast-bg:   rgba(40, 72, 45, 0.85);
+  --toast-text: #a5d6a7;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surface */
+  --bg:         #f5f6f8;
+  --bg-raised:  #ffffff;
+  --bg-card:    #ffffff;
+  --bg-input:   #f0f1f5;
+  --bg-inset:   #eaecf0;
+  --bg-overlay: rgba(245, 246, 248, 0.88);
+
+  /* Text */
+  --text:       #1c2028;
+  --text-2:     #5c6472;
+  --text-3:     #8890a0;
+  --text-4:     #b4bac6;
+
+  /* Border */
+  --border:     rgba(30, 40, 60, 0.10);
+  --border-s:   rgba(30, 40, 60, 0.05);
+
+  /* Accent: green */
+  --accent:     #2d9e50;
+  --accent-dim: rgba(45, 158, 80, 0.10);
+
+  /* Accent: blue */
+  --link:       #2e6cd6;
+  --link-hover: #1a5cc4;
+  --link-dim:   rgba(46, 108, 214, 0.08);
+
+  /* Accent: red */
+  --danger:     #d13838;
+  --danger-dim: rgba(209, 56, 56, 0.08);
+
+  /* Accent: warm */
+  --warm:       #a07060;
+  --warm-dim:   rgba(160, 112, 96, 0.10);
+
+  /* Accent: gold */
+  --gold:       #b88c14;
+  --gold-dim:   rgba(184, 140, 20, 0.08);
+
+  /* ── Zone: 忆 ── */
+  --yi-bg:      #ffffff;
+  --yi-card:    #f8f9fb;
+  --yi-slot:    #f2f3f6;
+  --yi-input:   #eef0f4;
+
+  /* ── Zone: 潜 ── */
+  --qian-from:     #eef0f6;
+  --qian-to:       #e6e9f2;
+  --qian-card:     rgba(255, 255, 255, 0.70);
+  --qian-glow-in:  rgba(55, 75, 135, 0.04);
+  --qian-glow-out: rgba(45, 65, 115, 0.03);
+  --qian-label:    #6a7590;
+
+  /* ── Depth bar ── */
+  --depth-bg:        rgba(240, 242, 248, 0.80);
+  --depth-text:      #a0a8b8;
+  --depth-hover:     #5a6580;
+  --depth-active:    #2a3450;
+  --depth-active-bg: rgba(40, 60, 120, 0.10);
+  --depth-active-bd: rgba(40, 60, 120, 0.16);
+  --depth-glow:      rgba(40, 60, 120, 0.15);
+
+  /* ── Growth ── */
+  --g-init:       #b88c14;
+  --g-init-dim:   rgba(184, 140, 20, 0.08);
+  --g-auto:       #2e6cd6;
+  --g-auto-dim:   rgba(46, 108, 214, 0.08);
+  --g-user:       #2d9e50;
+  --g-user-dim:   rgba(45, 158, 80, 0.08);
+
+  /* ── Diff ── */
+  --diff-add:     #1a7f37;
+  --diff-add-bg:  rgba(26, 127, 55, 0.06);
+  --diff-del:     #cf222e;
+  --diff-del-bg:  rgba(207, 34, 46, 0.06);
+  --diff-eq:      #b0b8c4;
+
+  /* ── Toggle ── */
+  --toggle-track:    rgba(30, 40, 60, 0.08);
+  --toggle-thumb:    #c0c6d0;
+  --toggle-on-track: rgba(45, 158, 80, 0.25);
+  --toggle-on-thumb: #2d9e50;
+
+  /* ── Toast ── */
+  --toast-bg:   rgba(45, 158, 80, 0.10);
+  --toast-text: #1a7f37;
+}

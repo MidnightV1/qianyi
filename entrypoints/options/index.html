@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="manifest.open_in_tab" content="true" />
+  <title>潜忆 - 设置</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <!-- Top bar -->
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <span class="topbar-title">潜忆</span>
+      <div class="theme-toggle" id="themeToggle">
+        <button class="theme-btn" data-theme="light" title="亮色">☀️</button>
+        <button class="theme-btn" data-theme="system" title="跟随系统">💻</button>
+        <button class="theme-btn" data-theme="dark" title="暗色">🌙</button>
+      </div>
+      <span class="topbar-version" id="version"></span>
+    </div>
+  </nav>
+
+  <main>
+    <!-- ════════════════════════════════════════
+         忆 · 你写下的
+         ════════════════════════════════════════ -->
+    <section class="zone zone-yi">
+      <div class="zone-label">忆 · 你写下的</div>
+
+      <!-- Identity management -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">👤 用户画像</h2>
+          <button id="addIdentity" class="add-btn" title="新增画像">+ 新增</button>
+        </div>
+        <p class="card-desc">告诉 AI 你是谁、做什么、关注什么。最多 3 个画像，在插件弹窗快速切换。</p>
+        <div id="identityList" class="slot-list"></div>
+      </div>
+
+      <!-- Persona management -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🤖 AI 人设</h2>
+          <div class="card-actions">
+            <button id="importPersona" class="add-btn" title="导入潜忆匙">🔑 导入</button>
+            <button id="addPersona" class="add-btn" title="新增人设">+ 新增</button>
+          </div>
+        </div>
+        <p class="card-desc">定义 AI 的身份与灵魂。身份设定相对固定，灵魂会在对话中自主成长。</p>
+        <div id="personaList" class="slot-list"></div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════
+         潜 · 暗自生长的
+         ════════════════════════════════════════ -->
+    <section class="zone zone-qian">
+      <div class="zone-label">潜 · 暗自生长的</div>
+
+      <!-- Depth selector -->
+      <div class="card">
+        <h2 class="card-title">传递深度</h2>
+        <p class="card-desc">AI 对你的感知深度——从水面到深处</p>
+        <div class="depth-bar" id="depthBar"></div>
+        <p class="depth-desc" id="depthDesc"></p>
+      </div>
+
+      <!-- Growth log -->
+      <div class="card">
+        <h2 class="card-title">成长记录</h2>
+        <p class="card-desc">画像和灵魂的每次变化都会留下记录</p>
+
+        <div class="growth-tabs">
+          <button class="growth-tab active" data-field="bio">画像</button>
+          <button class="growth-tab" data-field="soul">灵魂</button>
+        </div>
+        <div class="growth-slots" id="growthSlots"></div>
+        <div class="growth-timeline" id="growthTimeline">
+          <p class="growth-empty">暂无记录</p>
+        </div>
+        <button class="growth-more" id="growthMore" hidden>查看更多</button>
+      </div>
+
+      <!-- Injection settings -->
+      <div class="card">
+        <h2 class="card-title">行为控制</h2>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-label">传递频率</span>
+            <span class="setting-desc">每隔多少轮对话重新传递上下文，0 = 仅在新会话时传递</span>
+          </div>
+          <div class="setting-control">
+            <input type="number" id="reinjectInterval" min="0" max="20" value="10" class="num-input" />
+            <span class="num-unit">轮</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ About (neutral) ══ -->
+    <section class="card card-about">
+      <h2 class="card-title">关于</h2>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">支持平台</span>
+          <span class="setting-desc">更多平台正在适配中</span>
+        </div>
+        <span class="badge">chat.deepseek.com</span>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">源代码</span>
+          <span class="setting-desc">MIT License</span>
+        </div>
+        <a href="#" class="link-btn" id="repoLink">GitHub ↗</a>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">清除成长记录</span>
+          <span class="setting-desc">删除所有画像和灵魂的变更历史</span>
+        </div>
+        <button class="slot-action-btn danger" id="clearGrowth">清除</button>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">清除所有数据</span>
+          <span class="setting-desc">恢复出厂状态，删除画像、人设、成长记录和所有配置</span>
+        </div>
+        <button class="slot-action-btn danger" id="clearAll">重置</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" hidden>
+    <span id="toastText"></span>
+  </div>
+
+  <script src="./main.ts" type="module"></script>
+</body>
+</html>

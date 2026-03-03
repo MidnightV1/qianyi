@@ -34,17 +34,17 @@ export interface PlatformAdapter {
   shouldIntercept(url: string, body?: Record<string, unknown>): boolean;
 
   /**
-   * Modify the parsed request body to wrap user input with full injection.
-   * @param body      Parsed JSON body
-   * @param profile   User profile for injection
+   * Modify the parsed request body to wrap user input with injection.
+   * @param body  Parsed JSON body
+   * @param ctx   Resolved injection context (mode, identity, persona)
    */
   modifyRequestBody(
     body: Record<string, unknown>,
-    profile: import('../profile').UserProfile,
+    ctx: import('../profile').InjectionContext,
   ): Record<string, unknown>;
 
   /**
-   * Modify the request body with time-only injection (when main switch is OFF).
+   * Modify the request body with time-only injection (when mode is 'time' or fallback).
    * Returns null if the platform already knows the time (no modification needed).
    */
   modifyRequestBodyTimeOnly(
