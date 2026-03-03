@@ -39,20 +39,22 @@
 
 ## 安装
 
-### 方法一：CRX 安装（推荐）
+### 方法一：加载已解压的扩展程序（推荐，最稳定）
 
-1. 从 [Releases](https://github.com/todo/releases) 下载最新的 `qianyi-x.x.x.crx` 文件
-2. 打开 Chrome，地址栏输入 `chrome://extensions/`
-3. 开启右上角「**开发者模式**」开关
-4. 将 `.crx` 文件**直接拖入**该页面
-5. 点击「添加扩展程序」确认安装
+1. 下载 [**qianyi-1.0.0-chrome.zip**](https://github.com/MidnightV1/qianyi/releases/download/1.0.0/qianyi-1.0.0-chrome.zip) 并解压
+2. 解压到一个固定位置（**不要解压后移动或删除**）
+3. Chrome 地址栏输入 `chrome://extensions/`
+4. 开启右上角「**开发者模式**」
+5. 点击左上角「**加载已解压的扩展程序**」→ 选择解压后的文件夹
 
-### 方法二：解压安装
+### 方法二：CRX 安装
 
-1. 下载 `.zip` 文件并解压到一个固定位置（**不要解压后移动或删除**）
-2. Chrome → `chrome://extensions/` → 开启「开发者模式」
-3. 点击「**加载已解压的扩展程序**」→ 选择解压后的文件夹
-4. 完成
+> **注意**：由于 Chrome 安全策略，非商店下载的 `.crx` 文件可能会被拦截或无法直接安装。
+
+1. 下载 `.crx` 文件（如果 Chrome 提示"文件有危害"，请选择"保留"或"继续下载"）
+2. 打开 `chrome://extensions/` 并开启「**开发者模式**」
+3. 将 `.crx` 文件**拖入**该页面
+4. 如果拖入无效，请使用方法一
 
 安装后，打开 [chat.deepseek.com](https://chat.deepseek.com)，你会在浏览器右上角看到潜忆图标。
 
