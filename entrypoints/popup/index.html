@@ -18,8 +18,17 @@
     <!-- Header -->
     <header>
       <h1>潜忆</h1>
-      <button id="settings" class="icon-btn" title="设置">⚙️</button>
+      <div class="header-actions">
+        <button id="checkUpdate" class="icon-btn" title="检查更新">🆕</button>
+        <button id="settings" class="icon-btn" title="设置">⚙️</button>
+      </div>
     </header>
+
+    <!-- Update notice -->
+    <section class="update-bar" id="updateBar" hidden>
+      <span id="updateText">发现新版本</span>
+      <button id="downloadUpdate" class="update-link">下载</button>
+    </section>
 
     <!-- Injection Mode -->
     <section class="section">

@@ -33,6 +33,11 @@ header {
   margin-bottom: 14px;
 }
 
+.header-actions {
+  display: flex;
+  gap: 4px;
+}
+
 h1 {
   font-size: 15px;
   font-weight: 600;
@@ -50,6 +55,36 @@ h1 {
 
 .icon-btn:hover {
   background: var(--border);
+}
+
+.update-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--accent-dim);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.update-bar[hidden] {
+  display: none;
+}
+
+.update-link {
+  border: none;
+  background: none;
+  color: var(--link);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.update-link:hover {
+  color: var(--link-hover);
 }
 
 /* ── Section ── */

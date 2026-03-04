@@ -15,6 +15,10 @@ const $ = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 
 let config: GhostConfig;
+const RELEASE_API = 'https://api.github.com/repos/MidnightV1/qianyi/releases/latest';
+const UPDATE_CACHE_KEY = 'qianyi_update_cache_v1';
+const UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
+let updateUrl = '';
 
 /* ══════════════════════════════════════════
  *  Init
@@ -39,9 +43,95 @@ async function init() {
 
   // Open options page
   $('settings').addEventListener('click', () => browser.runtime.openOptionsPage());
+  $('checkUpdate').addEventListener('click', () => checkForUpdate(true));
+  $('downloadUpdate').addEventListener('click', async () => {
+    if (!updateUrl) return;
+    await browser.tabs.create({ url: updateUrl });
+  });
   $('editIdentity').addEventListener('click', () => browser.runtime.openOptionsPage());
   $('editPersona').addEventListener('click', () => browser.runtime.openOptionsPage());
   $('importPersona').addEventListener('click', () => importPersonaFromClipboard());
+
+  void checkForUpdate(false);
+}
+
+type UpdateCache = {
+  checkedAt: number;
+  latestVersion: string;
+  downloadUrl: string;
+};
+
+function normalizeVersion(v: string): number[] {
+  return v.replace(/^v/i, '').split('.').map(part => Number.parseInt(part, 10) || 0);
+}
+
+function isNewerVersion(latest: string, current: string): boolean {
+  const left = normalizeVersion(latest);
+  const right = normalizeVersion(current);
+  const len = Math.max(left.length, right.length);
+  for (let i = 0; i < len; i++) {
+    const a = left[i] ?? 0;
+    const b = right[i] ?? 0;
+    if (a > b) return true;
+    if (a < b) return false;
+  }
+  return false;
+}
+
+function showUpdate(version: string, url: string) {
+  updateUrl = url;
+  $('updateText').textContent = `发现新版本 v${version}`;
+  $('updateBar').hidden = false;
+}
+
+function hideUpdate() {
+  updateUrl = '';
+  $('updateBar').hidden = true;
+}
+
+async function fetchLatestRelease(): Promise<UpdateCache | null> {
+  const resp = await fetch(RELEASE_API, { cache: 'no-store' });
+  if (!resp.ok) return null;
+  const data = await resp.json() as { tag_name?: string; html_url?: string };
+  if (!data.tag_name) return null;
+  return {
+    checkedAt: Date.now(),
+    latestVersion: data.tag_name,
+    downloadUrl: data.html_url || 'https://github.com/MidnightV1/qianyi/releases/latest',
+  };
+}
+
+async function checkForUpdate(force: boolean) {
+  const currentVersion = browser.runtime.getManifest().version;
+  try {
+    const store = await browser.storage.local.get(UPDATE_CACHE_KEY);
+    const cached = store[UPDATE_CACHE_KEY] as UpdateCache | undefined;
+    let latest = cached;
+
+    const stale = !cached || (Date.now() - cached.checkedAt > UPDATE_CHECK_INTERVAL_MS);
+    if (force || stale) {
+      const fetched = await fetchLatestRelease();
+      if (fetched) {
+        latest = fetched;
+        await browser.storage.local.set({ [UPDATE_CACHE_KEY]: fetched });
+      }
+    }
+
+    if (!latest) {
+      if (force) flash('⚠️ 检查更新失败');
+      return;
+    }
+
+    if (isNewerVersion(latest.latestVersion, currentVersion)) {
+      showUpdate(latest.latestVersion, latest.downloadUrl);
+      if (force) flash(`发现新版本 v${latest.latestVersion}`);
+    } else {
+      hideUpdate();
+      if (force) flash('✅ 已是最新版本');
+    }
+  } catch {
+    if (force) flash('⚠️ 检查更新失败');
+  }
 }
 
 /* ══════════════════════════════════════════
