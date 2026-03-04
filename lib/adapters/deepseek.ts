@@ -295,6 +295,12 @@ export const deepseekAdapter: PlatformAdapter = {
         el = el.parentElement;
       }
     }
+
+    // ── Strategy C: legacy leakage fallback ──
+    // Some historical messages may have already lost ghost tags but still keep
+    // trailing boolean residues like "false\n\nfalse". Remove only trailing
+    // standalone boolean lines to avoid touching normal sentence content.
+    cleanTrailingBooleanResidue(root);
   },
 };
 
@@ -397,6 +403,29 @@ function isBlockContainer(el: HTMLElement): boolean {
     el.getAttribute('role') === 'article' ||
     el.classList.contains('message') ||
     el.classList.contains('chat-message');
+}
+
+/**
+ * Remove trailing boolean-only lines left by old control-tag stripping bugs.
+ * Examples:
+ *   "...正文\n\nfalse\n\nfalse"
+ *   "...正文\nfalse"
+ */
+function cleanTrailingBooleanResidue(root: Element): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+
+  while (walker.nextNode()) {
+    const tn = walker.currentNode as Text;
+    const val = tn.nodeValue || '';
+    if (!val.includes('false') && !val.includes('true')) continue;
+
+    // Match 1~3 trailing boolean-only lines at end of this text node
+    // Keep the main content before them intact.
+    const next = val.replace(/(?:\r?\n\s*(?:true|false)\s*){1,3}\s*$/g, '');
+    if (next !== val && next.trim().length > 0) {
+      tn.nodeValue = next;
+    }
+  }
 }
 
 /**
