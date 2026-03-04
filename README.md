@@ -110,10 +110,10 @@
 | 平台 | 状态 |
 |------|------|
 | DeepSeek | ✅ 已支持 |
-| 通义千问（Qwen） | 🔜 开发中 |
-| Gemini | 🔜 计划中 |
+| 通义千问（Qwen） | ✅ 已支持（Beta） |
+| Gemini | ✅ 已支持（Beta） |
+| Kimi | ✅ 已支持（Beta） |
 | ChatGPT | 🔜 计划中 |
-| Kimi | 🔜 计划中 |
 
 ## 后续计划
 

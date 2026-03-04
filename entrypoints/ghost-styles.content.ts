@@ -6,7 +6,15 @@
  */
 
 export default defineContentScript({
-  matches: ['*://chat.deepseek.com/*'],
+  matches: [
+    '*://chat.deepseek.com/*',
+    '*://gemini.google.com/*',
+    '*://aistudio.google.com/*',
+    '*://kimi.moonshot.cn/*',
+    '*://chat.qwen.ai/*',
+    '*://tongyi.aliyun.com/*',
+    '*://tongyi.com/*',
+  ],
   runAt: 'document_start',
 
   main() {

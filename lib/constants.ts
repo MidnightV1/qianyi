@@ -36,4 +36,12 @@ export const STORE = {
 export const DEFAULT_REINJECT_INTERVAL = 10;
 
 /** Hosts supported by Qianyi (used for popup disable check) */
-export const SUPPORTED_HOSTS = ['chat.deepseek.com'];
+export const SUPPORTED_HOSTS = [
+  'chat.deepseek.com',
+  'gemini.google.com',
+  'aistudio.google.com',
+  'kimi.moonshot.cn',
+  'chat.qwen.ai',
+  'tongyi.aliyun.com',
+  'tongyi.com',
+];

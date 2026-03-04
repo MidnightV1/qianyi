@@ -11,20 +11,30 @@
  *   Cannot access browser.storage directly (page context has no extension APIs).
  */
 
-import { deepseekAdapter } from '../lib/adapters/deepseek';
+import { getAdapterForHost } from '../lib/adapters';
 import { isContextEmpty } from '../lib/profile';
 import { MSG } from '../lib/constants';
 import { StreamParser } from '../lib/stream-parser';
 import type { InjectionContext } from '../lib/profile';
 import type { PlatformAdapter } from '../lib/adapters/types';
 
+const SCRIPT_MATCHES = [
+  '*://chat.deepseek.com/*',
+  '*://gemini.google.com/*',
+  '*://aistudio.google.com/*',
+  '*://kimi.moonshot.cn/*',
+  '*://chat.qwen.ai/*',
+  '*://tongyi.aliyun.com/*',
+  '*://tongyi.com/*',
+];
+
 export default defineContentScript({
-  matches: ['*://chat.deepseek.com/*'],
+  matches: SCRIPT_MATCHES,
   world: 'MAIN',
   runAt: 'document_start',
 
   main() {
-    const adapter: PlatformAdapter = deepseekAdapter;
+    const adapter: PlatformAdapter = getAdapterForHost(window.location.hostname);
 
     let ctx: InjectionContext | null = null;
 
@@ -250,6 +260,6 @@ export default defineContentScript({
       });
     }
 
-    console.log('[Qianyi] 🚀 Interceptors installed (fetch + XHR)');
+    console.log(`[Qianyi] 🚀 Interceptors installed (${adapter.name})`);
   },
 });

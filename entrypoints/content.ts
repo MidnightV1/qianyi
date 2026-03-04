@@ -10,7 +10,7 @@
  *   5. Debug panel — show current injection text when toggled on
  */
 
-import { deepseekAdapter } from '../lib/adapters/deepseek';
+import { getAdapterForHost } from '../lib/adapters';
 import { formatInjection } from '../lib/injection';
 import { MSG, STORE, RESP_TAG } from '../lib/constants';
 import {
@@ -19,8 +19,18 @@ import {
 } from '../lib/profile';
 import { appendGrowth } from '../lib/growth';
 
+const SCRIPT_MATCHES = [
+  '*://chat.deepseek.com/*',
+  '*://gemini.google.com/*',
+  '*://aistudio.google.com/*',
+  '*://kimi.moonshot.cn/*',
+  '*://chat.qwen.ai/*',
+  '*://tongyi.aliyun.com/*',
+  '*://tongyi.com/*',
+];
+
 export default defineContentScript({
-  matches: ['*://chat.deepseek.com/*'],
+  matches: SCRIPT_MATCHES,
   runAt: 'document_idle',
 
   async main() {
@@ -97,7 +107,8 @@ function sendToPage(ctx: InjectionContext) {
 }
 
 function setupDOMCleaner() {
-  const clean = () => deepseekAdapter.cleanDOM(document.body);
+  const adapter = getAdapterForHost(window.location.hostname);
+  const clean = () => adapter.cleanDOM(document.body);
   clean();
 
   // Use requestAnimationFrame for near-instant cleanup before paint.
@@ -229,7 +240,7 @@ function setupDOMCleaner() {
               node.remove(); // unknown ghost-ml element — remove to be safe
             }
           } else {
-            deepseekAdapter.cleanDOM(node);
+            adapter.cleanDOM(node);
             // Also run text-level cleanup on descendants (belt & suspenders)
             cleanGhostTextInTree(node);
           }

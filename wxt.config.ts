@@ -7,7 +7,16 @@ export default defineConfig({
     description: '让 AI 记住你——非侵入式 LLM 记忆注入',
     version: '1.0.1',
     permissions: ['storage'],
-    host_permissions: ['*://chat.deepseek.com/*', 'https://api.github.com/*'],
+    host_permissions: [
+      '*://chat.deepseek.com/*',
+      '*://gemini.google.com/*',
+      '*://aistudio.google.com/*',
+      '*://kimi.moonshot.cn/*',
+      '*://chat.qwen.ai/*',
+      '*://tongyi.aliyun.com/*',
+      '*://tongyi.com/*',
+      'https://api.github.com/*',
+    ],
     icons: {
       16: 'img/icon_16_16.png',
       32: 'img/icon_32_32.png',
