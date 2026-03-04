@@ -43,6 +43,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function hasInjectableField(container: Record<string, unknown>): boolean {
+  if (Array.isArray(container.messages)) return true;
+  return ['prompt', 'query', 'input', 'message', 'content', 'text'].some((key) => typeof container[key] === 'string');
+}
+
 function tryModifyContainer(container: Record<string, unknown>, ctx: InjectionContext): boolean {
   const source =
     (typeof container.prompt === 'string' && container.prompt) ||
@@ -90,8 +95,13 @@ export const qwenAdapter: PlatformAdapter = {
     if (pathname.includes('/conversation') || pathname.includes('/stream')) return true;
 
     if (!body) return false;
-    if (Array.isArray(body.messages)) return true;
-    return ['prompt', 'query', 'input', 'message', 'content', 'text'].some((key) => typeof body[key] === 'string');
+    if (hasInjectableField(body)) return true;
+
+    for (const key of ['input', 'data', 'params', 'payload', 'request'] as const) {
+      const nested = asRecord(body[key]);
+      if (nested && hasInjectableField(nested)) return true;
+    }
+    return false;
   },
 
   modifyRequestBody(body: Record<string, unknown>, ctx: InjectionContext): Record<string, unknown> {

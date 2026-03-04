@@ -248,6 +248,42 @@ export default defineContentScript({
       return _xhrSend.call(this, body);
     };
 
+    /* ── WebSocket interception (for sites using ws transport) ── */
+    const _wsSend = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+      try {
+        if (typeof data === 'string' && ctx) {
+          let parsed: Record<string, unknown> | undefined;
+          try {
+            parsed = JSON.parse(data);
+          } catch {
+            parsed = undefined;
+          }
+
+          if (parsed && adapter.shouldIntercept(window.location.href, parsed)) {
+            if (ctx.mode !== 'off' && !isContextEmpty(ctx) && shouldInject(parsed)) {
+              const modified = adapter.modifyRequestBody(parsed, ctx);
+              recordInjection(parsed);
+              console.log('[Qianyi] ✅ Intercepted (WS):', adapter.name, `[${ctx.mode}]`);
+              return _wsSend.call(this, JSON.stringify(modified));
+            }
+
+            if (ctx.mode === 'time' && !adapter.capabilities.knowsCurrentTime) {
+              const modified = adapter.modifyRequestBodyTimeOnly(parsed);
+              if (modified) {
+                console.log('[Qianyi] ✅ Intercepted time-only (WS):', adapter.name);
+                return _wsSend.call(this, JSON.stringify(modified));
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Qianyi] WebSocket override error (pass-through):', err);
+      }
+
+      return _wsSend.call(this, data as never);
+    };
+
     /**
      * Attach progress/loadend listeners to an intercepted XHR
      * to parse the SSE response stream for info-control blocks.
@@ -299,6 +335,6 @@ export default defineContentScript({
       });
     }
 
-    console.log(`[Qianyi] 🚀 Interceptors installed (${adapter.name})`);
+    console.log(`[Qianyi] 🚀 Interceptors installed (${adapter.name}, fetch + XHR + WS)`);
   },
 });
