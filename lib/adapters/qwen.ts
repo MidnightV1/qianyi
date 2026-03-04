@@ -37,6 +37,38 @@ function injectAnyStringField(body: Record<string, unknown>, formatter: (text: s
   return body;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function tryModifyContainer(container: Record<string, unknown>, ctx: InjectionContext): boolean {
+  const source =
+    (typeof container.prompt === 'string' && container.prompt) ||
+    (typeof container.query === 'string' && container.query) ||
+    (typeof container.input === 'string' && container.input) ||
+    (typeof container.message === 'string' && container.message) ||
+    (typeof container.content === 'string' && container.content) ||
+    '';
+
+  if (Array.isArray(container.messages)) {
+    const next = [...container.messages];
+    if (injectIntoMessages(next as unknown[], formatInjection(ctx, source))) {
+      container.messages = next;
+      return true;
+    }
+  }
+
+  for (const key of ['prompt', 'query', 'input', 'message', 'content', 'text'] as const) {
+    if (typeof container[key] === 'string') {
+      container[key] = formatInjection(ctx, container[key] as string);
+      return true;
+    }
+  }
+  return false;
+}
+
 export const qwenAdapter: PlatformAdapter = {
   id: 'qwen',
   name: 'Qwen',
@@ -63,24 +95,22 @@ export const qwenAdapter: PlatformAdapter = {
   },
 
   modifyRequestBody(body: Record<string, unknown>, ctx: InjectionContext): Record<string, unknown> {
-    const source =
-      (typeof body.prompt === 'string' && body.prompt) ||
-      (typeof body.query === 'string' && body.query) ||
-      (typeof body.input === 'string' && body.input) ||
-      (typeof body.message === 'string' && body.message) ||
-      (typeof body.content === 'string' && body.content) ||
-      '';
+    const cloned = { ...body };
 
-    const injected = formatInjection(ctx, source);
+    if (tryModifyContainer(cloned, ctx)) return cloned;
 
-    if (Array.isArray(body.messages)) {
-      const cloned = { ...body, messages: [...body.messages] };
-      if (injectIntoMessages(cloned.messages as unknown[], injected)) {
+    const nestedKeys = ['input', 'data', 'params', 'payload', 'request'] as const;
+    for (const key of nestedKeys) {
+      const nested = asRecord(cloned[key]);
+      if (!nested) continue;
+      const nestedCopy = { ...nested };
+      if (tryModifyContainer(nestedCopy, ctx)) {
+        cloned[key] = nestedCopy;
         return cloned;
       }
     }
 
-    return injectAnyStringField(body, (text) => formatInjection(ctx, text));
+    return injectAnyStringField(cloned, (text) => formatInjection(ctx, text));
   },
 
   modifyRequestBodyTimeOnly(body: Record<string, unknown>): Record<string, unknown> | null {

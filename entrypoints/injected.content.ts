@@ -107,6 +107,31 @@ export default defineContentScript({
       }
     }
 
+    async function extractFetchBody(
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<{ body?: Record<string, unknown>; source: 'init' | 'request' | 'none' }> {
+      if (init?.body) {
+        const parsed = await extractBody(init.body);
+        return { body: parsed, source: parsed ? 'init' : 'none' };
+      }
+
+      if (input instanceof Request) {
+        const method = (input.method || 'GET').toUpperCase();
+        if (method === 'GET' || method === 'HEAD') return { source: 'none' };
+
+        try {
+          const text = await input.clone().text();
+          if (!text) return { source: 'none' };
+          return { body: JSON.parse(text), source: 'request' };
+        } catch {
+          return { source: 'none' };
+        }
+      }
+
+      return { source: 'none' };
+    }
+
     /* ── Receive context from isolated world ── */
     window.addEventListener('message', (e) => {
       if (e.source !== window) return;
@@ -125,24 +150,36 @@ export default defineContentScript({
       try {
         const url = getUrl(input);
 
-        if (ctx && ctx.mode !== 'off' && !isContextEmpty(ctx) && init?.body) {
-          const body = await extractBody(init.body);
+        if (ctx && ctx.mode !== 'off' && !isContextEmpty(ctx)) {
+          const extracted = await extractFetchBody(input, init);
+          const body = extracted.body;
 
           if (body && adapter.shouldIntercept(url, body) && shouldInject(body)) {
             const modified = adapter.modifyRequestBody(body, ctx);
-            init = { ...init, body: JSON.stringify(modified) };
+
+            if (extracted.source === 'request' && input instanceof Request && !init?.body) {
+              input = new Request(input, { body: JSON.stringify(modified) });
+            } else {
+              init = { ...init, body: JSON.stringify(modified) };
+            }
+
             recordInjection(body);
 
             console.log('[Qianyi] ✅ Intercepted:', url, `[${ctx.mode}]`);
           }
-        } else if (ctx && ctx.mode === 'time' && init?.body) {
+        } else if (ctx && ctx.mode === 'time') {
           // Time-only mode
           if (!adapter.capabilities.knowsCurrentTime) {
-            const body = await extractBody(init.body);
+            const extracted = await extractFetchBody(input, init);
+            const body = extracted.body;
             if (body && adapter.shouldIntercept(url, body)) {
               const modified = adapter.modifyRequestBodyTimeOnly(body);
               if (modified) {
-                init = { ...init, body: JSON.stringify(modified) };
+                if (extracted.source === 'request' && input instanceof Request && !init?.body) {
+                  input = new Request(input, { body: JSON.stringify(modified) });
+                } else {
+                  init = { ...init, body: JSON.stringify(modified) };
+                }
 
               }
             }
