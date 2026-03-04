@@ -66,6 +66,26 @@ export interface PlatformAdapter {
   ): string[];
 
   /**
+   * Rewrite SSE response chunks to strip ghost-ml from content deltas.
+   * Each adapter implements this based on its platform-specific SSE format.
+   *
+   * The `contentFilter` callback is backed by a GhostMLFilter that:
+   *   - Strips ghost-ml tags (model-response, origin-user-input → unwrap)
+   *   - Removes entire blocks (main-ghost-ml, info-control-ghost-ml → delete)
+   *   - Extracts info-control data before removing the block
+   *
+   * @param sseChunk       Raw SSE text (one or more data lines)
+   * @param contentFilter  Function that filters a content delta string
+   * @param parseState     Shared mutable state for SSE line parsing
+   * @returns Rewritten SSE text with ghost-ml stripped from content fields
+   */
+  rewriteSSEChunk(
+    sseChunk: string,
+    contentFilter: (delta: string) => string,
+    parseState: Record<string, unknown> & { partial: string },
+  ): string;
+
+  /**
    * Remove injection traces from a DOM subtree.
    * Called on initial load and on every DOM mutation.
    */

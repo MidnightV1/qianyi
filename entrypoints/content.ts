@@ -12,7 +12,7 @@
 
 import { getAdapterForHost } from '../lib/adapters';
 import { formatInjection } from '../lib/injection';
-import { MSG, STORE, RESP_TAG } from '../lib/constants';
+import { MSG, STORE } from '../lib/constants';
 import {
   loadConfig, saveConfig, resolveContext,
   type GhostConfig, type InjectionContext,
@@ -125,107 +125,13 @@ function setupDOMCleaner() {
     });
   };
 
-  // ── Synchronous streaming cleanup ──
-  // When ghost-ml tags appear as literal text (not HTML elements),
-  // CSS can't hide them. Clean synchronously in MutationObserver
-  // callback — before the browser paints.
-  //
-  // Two strategies:
-  //   STRIP:    opening <model-response-ghost-ml> — remove tag text, keep content after it
-  //   TRUNCATE: </model-response-ghost-ml> and <info-control-ghost-ml> — cut everything from tag onward
-
-  const RESP_OPEN = `<${RESP_TAG}>`;
-  const TRUNC_TARGETS = [
-    `</${RESP_TAG}`,            // </model-response-ghost-ml (closing)
-    `<info-control-ghost-ml`,   // control block opening
-    `<need-update-soul-ghost-ml`,
-    `<updated-ai-soul-ghost-ml`,
-  ];
-
-  /**
-   * Synchronous text-node cleanup: strip opening tag, truncate at closing/control tags.
-   * Returns true if any modification was made.
-   */
-  function cleanGhostText(textNode: Text): boolean {
-    let val = textNode.nodeValue || '';
-    if (!val || !val.includes('<')) return false;
-
-    let changed = false;
-
-    // STRIP: remove opening <model-response-ghost-ml> tag text, keep content after
-    if (val.includes(RESP_OPEN)) {
-      val = val.replace(RESP_OPEN, '');
-      changed = true;
-    }
-
-    // STRIP: also handle partial opening tag being built at the tail
-    // e.g. "Hello<model-response-ghost-m" — remove from '<' onward
-    if (!changed) {
-      const searchStart = Math.max(0, val.length - 30);
-      const tail = val.slice(searchStart);
-      const ltIdx = tail.lastIndexOf('<');
-      if (ltIdx !== -1) {
-        const candidate = tail.slice(ltIdx);
-        // Check if it's building toward the opening tag
-        if (RESP_OPEN.startsWith(candidate) && candidate.length > 1 && candidate !== RESP_OPEN) {
-          val = val.slice(0, searchStart + ltIdx);
-          changed = true;
-        }
-      }
-    }
-
-    // TRUNCATE: find earliest closing/control tag and cut everything from there
-    let cutAt = -1;
-    for (const target of TRUNC_TARGETS) {
-      const idx = val.indexOf(target);
-      if (idx !== -1 && (cutAt === -1 || idx < cutAt)) {
-        cutAt = idx;
-      }
-    }
-
-    if (cutAt !== -1) {
-      val = val.slice(0, cutAt);
-      changed = true;
-    } else {
-      // Partial truncation target at the tail
-      const searchStart = Math.max(0, val.length - 40);
-      const tail = val.slice(searchStart);
-      const ltIdx = tail.lastIndexOf('<');
-      if (ltIdx !== -1) {
-        const candidate = tail.slice(ltIdx);
-        for (const target of TRUNC_TARGETS) {
-          if (target.startsWith(candidate) && candidate.length > 1) {
-            val = val.slice(0, searchStart + ltIdx);
-            changed = true;
-            break;
-          }
-        }
-      }
-    }
-
-    if (changed) {
-      textNode.nodeValue = val;
-    }
-    return changed;
-  }
-
-  /** Run cleanGhostText on all text nodes inside an element */
-  function cleanGhostTextInTree(root: Node): boolean {
-    let cleaned = false;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      if (cleanGhostText(walker.currentNode as Text)) {
-        cleaned = true;
-      }
-    }
-    return cleaned;
-  }
-
+  // MutationObserver: synchronous element-level ghost-ml removal.
+  // The response-stream filter handles the primary cleanup at the source;
+  // this is a fallback for edge cases (SSR, EventSource, cached DOM, etc.).
   const observer = new MutationObserver((mutations) => {
     let needsClean = false;
 
     for (const m of mutations) {
-      // New nodes added
       for (const node of m.addedNodes) {
         if (node instanceof HTMLElement) {
           const tag = node.tagName.toLowerCase();
@@ -237,9 +143,13 @@ function setupDOMCleaner() {
               || tag === 'updated-user-bio-ghost-ml'
               || tag === 'need-update-soul-ghost-ml'
               || tag === 'updated-ai-soul-ghost-ml'
+              || tag === 'main-ghost-ml'
             ) {
               node.remove();
-            } else if (tag === 'model-response-ghost-ml') {
+            } else if (
+              tag === 'model-response-ghost-ml'
+              || tag === 'origin-user-input-ghost-ml'
+            ) {
               // Unwrap: keep children, remove wrapper
               const parent = node.parentNode;
               if (parent) {
@@ -250,29 +160,8 @@ function setupDOMCleaner() {
               node.remove(); // unknown ghost-ml element — remove to be safe
             }
           } else {
-            adapter.cleanDOM(node);
-            // Also run text-level cleanup on descendants (belt & suspenders)
-            cleanGhostTextInTree(node);
-          }
-        }
-        // Text node added with ghost-ml content
-        if (node.nodeType === Node.TEXT_NODE) {
-          if (cleanGhostText(node as Text)) {
-            needsClean = true;
-          } else if (node.nodeValue?.includes('ghost-ml')) {
             needsClean = true;
           }
-        }
-      }
-
-      // Existing text node content changed (streaming appends)
-      if (m.type === 'characterData') {
-        const tn = m.target as Text;
-        // Synchronous cleanup — runs before paint
-        if (cleanGhostText(tn)) {
-          needsClean = true;
-        } else if (tn.nodeValue?.includes('ghost-ml')) {
-          needsClean = true;
         }
       }
     }
@@ -283,7 +172,6 @@ function setupDOMCleaner() {
   observer.observe(document.body, {
     childList: true,
     subtree: true,
-    characterData: true,
   });
 }
 

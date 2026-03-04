@@ -14,7 +14,7 @@
 import { getAdapterForHost } from '../lib/adapters';
 import { isContextEmpty } from '../lib/profile';
 import { MSG } from '../lib/constants';
-import { StreamParser } from '../lib/stream-parser';
+import { GhostMLFilter, stripGhostML } from '../lib/response-filter';
 import type { InjectionContext } from '../lib/profile';
 import type { PlatformAdapter } from '../lib/adapters/types';
 
@@ -179,6 +179,7 @@ export default defineContentScript({
       input: RequestInfo | URL,
       init?: RequestInit,
     ): Promise<Response> {
+      let wasInjected = false;
       try {
         const url = getUrl(input);
         const method = (
@@ -242,6 +243,7 @@ export default defineContentScript({
             recordInjection(body);
 
             console.log('[Qianyi] ✅ Intercepted:', url, `[${ctx.mode}]`);
+            wasInjected = true;
           }
         } else if (ctx && ctx.mode === 'time') {
           // Time-only mode
@@ -265,7 +267,12 @@ export default defineContentScript({
         console.error('[Qianyi] Fetch override error (pass-through):', err);
       }
 
-      return _fetch.call(this, input, init);
+      const response = await _fetch.call(this, input, init);
+      try {
+        return filterFetchResponse(response, wasInjected);
+      } catch {
+        return response;
+      }
     };
 
     /* ── XHR interception (fallback) ── */
@@ -324,19 +331,17 @@ export default defineContentScript({
             }
             recordInjection(parsed);
             console.log('[Qianyi] ✅ Intercepted (XHR):', url, `[${ctx!.mode}]`);
-            setupResponseMonitor(this, true);
+            setupResponseFilter(this);
             return _xhrSend.call(this, JSON.stringify(modified));
           } else if (ctx && ctx.mode === 'time' && !adapter.capabilities.knowsCurrentTime) {
             // Time-only mode
             const modified = adapter.modifyRequestBodyTimeOnly(parsed);
             if (modified) {
-              setupResponseMonitor(this, false);
               return _xhrSend.call(this, JSON.stringify(modified));
             }
           }
 
           // Chat request but no injection (frequency control / mode skip)
-          setupResponseMonitor(this, false);
         }
       } catch (err) {
         console.error('[Qianyi] XHR override error (pass-through):', err);
@@ -402,53 +407,161 @@ export default defineContentScript({
       return _wsSend.call(this, data as never);
     };
 
+    /* ── Response filtering ── */
+
     /**
-     * Attach progress/loadend listeners to an intercepted XHR
-     * to parse the SSE response stream for info-control blocks.
+     * Filter a fetch Response to strip ghost-ml from the body.
+     *
+     * Track 1 (wasInjected): SSE stream — adapter-specific rewriting with
+     *         GhostMLFilter for info-control extraction + content stripping.
+     * Track 2 (all other JSON): lightweight regex strip for history data.
      */
-    function setupResponseMonitor(xhr: XMLHttpRequest, injected: boolean) {
-      const parser = new StreamParser();
-      const parseState: Record<string, unknown> & { partial: string } = { partial: '' };
-      let lastLength = 0;
-      let reported = false;
+    function filterFetchResponse(response: Response, wasInjected: boolean): Response {
+      if (!response.body || !response.ok) return response;
 
-      xhr.addEventListener('progress', () => {
-        try {
-          const full = xhr.responseText;
-          if (full.length <= lastLength) return;
+      const ct = response.headers.get('content-type') || '';
 
-          const chunk = full.slice(lastLength);
-          lastLength = full.length;
+      // Track 1: SSE stream filtering for injected requests
+      if (wasInjected) {
+        return wrapSSEFilter(response);
+      }
 
-          const deltas = adapter.extractContentDeltas(chunk, parseState);
+      // Track 2: JSON / text responses (conversation history on page load)
+      if (ct.includes('json') || ct.includes('text/plain')) {
+        return wrapJSONFilter(response);
+      }
 
-          for (const delta of deltas) {
-            const result = parser.feed(delta);
-            if (result && !reported) {
-              reported = true;
-              window.postMessage({ type: MSG.INFO_CONTROL, data: result }, '*');
-            }
+      return response;
+    }
+
+    /** Wrap a streaming SSE Response with adapter-specific ghost-ml rewriting. */
+    function wrapSSEFilter(response: Response): Response {
+      const filter = new GhostMLFilter();
+      const state: Record<string, unknown> & { partial: string } = { partial: '' };
+      const decoder = new TextDecoder();
+      const encoder = new TextEncoder();
+      let infoReported = false;
+
+      const ts = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          const text = decoder.decode(chunk, { stream: true });
+          const rewritten = adapter.rewriteSSEChunk(text, (d) => filter.feed(d), state);
+          if (rewritten) controller.enqueue(encoder.encode(rewritten));
+
+          if (!infoReported && filter.infoControl) {
+            infoReported = true;
+            window.postMessage({ type: MSG.INFO_CONTROL, data: filter.infoControl }, '*');
           }
-        } catch { /* ignore parse errors */ }
+        },
+        flush(controller) {
+          // Flush remaining partial line from SSE state
+          if (state.partial) {
+            const last = adapter.rewriteSSEChunk('\n', (d) => filter.feed(d), state);
+            if (last) controller.enqueue(encoder.encode(last));
+          }
+
+          const rest = filter.flush();
+          if (rest) controller.enqueue(encoder.encode(rest));
+
+          if (!infoReported && filter.infoControl) {
+            window.postMessage({ type: MSG.INFO_CONTROL, data: filter.infoControl }, '*');
+          }
+        },
       });
 
-      xhr.addEventListener('loadend', () => {
-        // Final flush: feed any remaining partial line
-        if (parseState.partial) {
-          const deltas = adapter.extractContentDeltas('\n', parseState);
-          for (const delta of deltas) {
-            parser.feed(delta);
+      return new Response(response.body!.pipeThrough(ts), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    }
+
+    /**
+     * Wrap a JSON Response with lightweight ghost-ml stripping.
+     * Only decodes/re-encodes when a chunk actually contains ghost-ml.
+     */
+    function wrapJSONFilter(response: Response): Response {
+      const decoder = new TextDecoder();
+      const encoder = new TextEncoder();
+
+      const ts = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          const text = decoder.decode(chunk, { stream: true });
+          if (text.includes('ghost-ml')) {
+            controller.enqueue(encoder.encode(stripGhostML(text)));
+          } else {
+            controller.enqueue(chunk);
           }
-        }
+        },
+      });
 
-        const result = parser.extracted;
-        if (result && !reported) {
-          reported = true;
-          window.postMessage({ type: MSG.INFO_CONTROL, data: result }, '*');
-        }
+      return new Response(response.body!.pipeThrough(ts), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    }
 
-        if (injected && !result) {
-          console.warn('[Qianyi] ⚠️ No info-control block found — model may have ignored the template.');
+    /**
+     * Override XHR responseText getter to return filtered content.
+     * Used for injected XHR requests (platforms that use XHR for streaming).
+     */
+    function setupResponseFilter(xhr: XMLHttpRequest) {
+      const filter = new GhostMLFilter();
+      const state: Record<string, unknown> & { partial: string } = { partial: '' };
+      const origDesc = Object.getOwnPropertyDescriptor(
+        XMLHttpRequest.prototype, 'responseText',
+      );
+
+      if (!origDesc?.get) return; // Can't override — fall back to DOM cleanup
+
+      let lastLen = 0;
+      let filtered = '';
+      let infoReported = false;
+      let flushed = false;
+
+      Object.defineProperty(xhr, 'responseText', {
+        get() {
+          const orig: string = origDesc.get!.call(this);
+          if (orig.length > lastLen) {
+            const chunk = orig.slice(lastLen);
+            lastLen = orig.length;
+            filtered += adapter.rewriteSSEChunk(chunk, (d) => filter.feed(d), state);
+            if (!infoReported && filter.infoControl) {
+              infoReported = true;
+              window.postMessage({ type: MSG.INFO_CONTROL, data: filter.infoControl }, '*');
+            }
+          }
+          return filtered;
+        },
+        configurable: true,
+      });
+
+      // Also shadow 'response' for text/default responseType
+      const respDesc = Object.getOwnPropertyDescriptor(
+        XMLHttpRequest.prototype, 'response',
+      );
+      if (respDesc?.get) {
+        Object.defineProperty(xhr, 'response', {
+          get() {
+            if (!this.responseType || this.responseType === 'text') {
+              return this.responseText;
+            }
+            return respDesc.get!.call(this);
+          },
+          configurable: true,
+        });
+      }
+
+      xhr.addEventListener('loadend', () => {
+        if (flushed) return;
+        flushed = true;
+        // Trigger final processing via getter
+        void xhr.responseText; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        const rest = filter.flush();
+        if (rest) filtered += rest;
+        if (!infoReported && filter.infoControl) {
+          window.postMessage({ type: MSG.INFO_CONTROL, data: filter.infoControl }, '*');
         }
       });
     }

@@ -2,6 +2,7 @@ import type { PlatformAdapter } from './types';
 import { formatInjection, formatTimeOnlyInjection } from '../injection';
 import type { InjectionContext } from '../profile';
 import { deepseekAdapter } from './deepseek';
+import { rewriteStandardSSE } from '../response-filter';
 
 function normalizeRole(message: Record<string, unknown>): string {
   const role = message.role;
@@ -232,6 +233,14 @@ export const qwenAdapter: PlatformAdapter = {
       }
     }
     return deltas;
+  },
+
+  rewriteSSEChunk(
+    sseChunk: string,
+    contentFilter: (delta: string) => string,
+    parseState: Record<string, unknown> & { partial: string },
+  ): string {
+    return rewriteStandardSSE(sseChunk, contentFilter, parseState);
   },
 
   cleanDOM(root: Element): void {

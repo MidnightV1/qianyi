@@ -234,199 +234,161 @@ export const deepseekAdapter: PlatformAdapter = {
     return value;
   },
 
+  /** Check if a JSON-patch path references a THINK fragment */
+  _isThinkFragment(path: string, fragTypes: Map<number, string>): boolean {
+    const idxMatch = path.match(/fragments\/(-?\d+)\/content/);
+    if (idxMatch) {
+      let idx = parseInt(idxMatch[1], 10);
+      if (idx < 0) idx = fragTypes.size + idx;
+      return fragTypes.get(idx) === 'THINK';
+    }
+    return false;
+  },
+
+  /* ── SSE response rewriting ────────────────────────── */
+
+  rewriteSSEChunk(
+    sseChunk: string,
+    contentFilter: (delta: string) => string,
+    parseState: Record<string, unknown> & { partial: string },
+  ): string {
+    const text = parseState.partial + sseChunk;
+    const lines = text.split('\n');
+    parseState.partial = lines.pop() || '';
+
+    if (!parseState.fragmentTypes) {
+      parseState.fragmentTypes = new Map<number, string>();
+    }
+    const fragTypes = parseState.fragmentTypes as Map<number, string>;
+
+    const output: string[] = [];
+    for (const line of lines) {
+      if (!line.startsWith('data: ') || line.includes('[DONE]')) {
+        output.push(line);
+        continue;
+      }
+      try {
+        const json = JSON.parse(line.slice(6));
+        let modified = false;
+
+        // ① Initial full fragment data
+        const fragments = json.v?.response?.fragments;
+        if (Array.isArray(fragments)) {
+          for (let i = 0; i < fragments.length; i++) {
+            fragTypes.set(i, fragments[i].type);
+            if (typeof fragments[i].content === 'string' && fragments[i].type !== 'THINK') {
+              fragments[i].content = contentFilter(fragments[i].content);
+              modified = true;
+            }
+          }
+          output.push(modified ? 'data: ' + JSON.stringify(json) : line);
+          continue;
+        }
+
+        // ② APPEND array on fragments
+        if (json.o === 'APPEND' && typeof json.p === 'string'
+            && json.p.endsWith('/fragments') && Array.isArray(json.v)) {
+          for (const frag of json.v) {
+            const newIdx = fragTypes.size;
+            fragTypes.set(newIdx, frag.type || 'RESPONSE');
+            parseState.lastOp = 'APPEND';
+            parseState.lastPath = `response/fragments/${newIdx}/content`;
+            if (typeof frag.content === 'string' && frag.type !== 'THINK') {
+              frag.content = contentFilter(frag.content);
+              modified = true;
+            }
+          }
+          output.push(modified ? 'data: ' + JSON.stringify(json) : line);
+          continue;
+        }
+
+        // ③ ADD on fragments
+        if (json.o === 'ADD' && typeof json.p === 'string'
+            && json.p.includes('fragments') && json.v) {
+          const newIdx = fragTypes.size;
+          fragTypes.set(newIdx, json.v.type || 'RESPONSE');
+          parseState.lastOp = 'APPEND';
+          parseState.lastPath = `response/fragments/${newIdx}/content`;
+          if (typeof json.v.content === 'string' && json.v.type !== 'THINK') {
+            json.v.content = contentFilter(json.v.content);
+            modified = true;
+          }
+          output.push(modified ? 'data: ' + JSON.stringify(json) : line);
+          continue;
+        }
+
+        // ④ APPEND on content path
+        if (json.o === 'APPEND' && typeof json.p === 'string'
+            && json.p.includes('/content') && typeof json.v === 'string') {
+          parseState.lastOp = 'APPEND';
+          parseState.lastPath = json.p;
+          if (!this._isThinkFragment(json.p, fragTypes)) {
+            json.v = contentFilter(json.v);
+            modified = true;
+          }
+          output.push(modified ? 'data: ' + JSON.stringify(json) : line);
+          continue;
+        }
+
+        // ⑤ Implicit APPEND (path but no op)
+        if (!json.o && typeof json.p === 'string'
+            && json.p.includes('/content') && typeof json.v === 'string') {
+          parseState.lastOp = 'APPEND';
+          parseState.lastPath = json.p;
+          if (!this._isThinkFragment(json.p, fragTypes)) {
+            json.v = contentFilter(json.v);
+            modified = true;
+          }
+          output.push(modified ? 'data: ' + JSON.stringify(json) : line);
+          continue;
+        }
+
+        // ⑥ Bare value inherit
+        if (typeof json.v === 'string' && !json.o && !json.p
+            && parseState.lastOp === 'APPEND' && parseState.lastPath) {
+          if (!this._isThinkFragment(parseState.lastPath as string, fragTypes)) {
+            json.v = contentFilter(json.v);
+            modified = true;
+          }
+          output.push(modified ? 'data: ' + JSON.stringify(json) : line);
+          continue;
+        }
+
+        // ⑦ BATCH — process sub-ops
+        if (json.o === 'BATCH' && Array.isArray(json.v)) {
+          for (const sub of json.v as Record<string, unknown>[]) {
+            if (typeof sub.v === 'string' && typeof sub.p === 'string'
+                && sub.p.includes('/content')) {
+              if (!this._isThinkFragment(sub.p, fragTypes)) {
+                sub.v = contentFilter(sub.v as string);
+                modified = true;
+              }
+            }
+          }
+          output.push(modified ? 'data: ' + JSON.stringify(json) : line);
+          continue;
+        }
+
+        // No match — pass through unchanged
+        output.push(line);
+      } catch {
+        output.push(line);
+      }
+    }
+
+    return output.length > 0 ? output.join('\n') + '\n' : '';
+  },
+
   /* ── DOM cleanup ───────────────────────────────────── */
 
   cleanDOM(root: Element): void {
-    const mainOpen = `<${MAIN_TAG}>`;
-    const mainClose = `</${MAIN_TAG}>`;
-    const userOpen = `<${USER_INPUT_TAG}>`;
-    const userClose = `</${USER_INPUT_TAG}>`;
-    const respOpen = `<${RESP_TAG}>`;
-    const respClose = `</${RESP_TAG}>`;
-    const infoOpen = `<${INFO_CTRL_TAG}>`;
-    const infoClose = `</${INFO_CTRL_TAG}>`;
 
-    // ── Strategy A: Element-level cleanup ──
-    // When the markdown renderer parses ghost-ml tags as real HTML custom elements,
-    // they won't appear in text nodes. Handle them by direct querySelectorAll.
+    // Element-level cleanup — remove/unwrap ghost-ml custom elements.
+    // The response-stream filter handles the primary cleanup; this is a
+    // belt-and-suspenders fallback for edge cases (SSR, EventSource, etc.).
     cleanGhostElements(root);
-
-    // ── Strategy B: Text-node-level cleanup ──
-    // When ghost-ml tags appear as literal text (not parsed as HTML).
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const hitNodes: Text[] = [];
-
-    while (walker.nextNode()) {
-      const tn = walker.currentNode as Text;
-      const val = tn.nodeValue || '';
-      if (val.includes('ghost-ml')) {
-        hitNodes.push(tn);
-      }
-    }
-
-    if (hitNodes.length === 0) return;
-
-    const processed = new Set<HTMLElement>();
-
-    for (const tn of hitNodes) {
-      let el = tn.parentElement;
-      while (el && el !== document.body) {
-        if (processed.has(el)) break;
-
-        const text = el.textContent || '';
-
-        // Request-side injection: <main-ghost-ml>...<origin-user-input-ghost-ml>
-        if (text.includes(mainOpen) && text.includes(mainClose)) {
-          replaceInjectionKeepUserInput(el, mainOpen, mainClose, userOpen, userClose);
-          el.dataset.ghostCleaned = 'true';
-          processed.add(el);
-          break;
-        }
-
-        // Response-side: strip <model-response-ghost-ml> wrapper + remove <info-control-ghost-ml> block
-        if (text.includes(respOpen) || text.includes(infoOpen)) {
-          cleanResponseTags(el, respOpen, respClose, infoOpen, infoClose);
-          el.dataset.ghostCleaned = 'true';
-          processed.add(el);
-          break;
-        }
-
-        if (isBlockContainer(el)) break;
-        el = el.parentElement;
-      }
-    }
-
-    // ── Strategy C: legacy leakage fallback ──
-    // Some historical messages may have already lost ghost tags but still keep
-    // trailing boolean residues like "false\n\nfalse". Remove only trailing
-    // standalone boolean lines to avoid touching normal sentence content.
-    cleanTrailingBooleanResidue(root);
   },
 };
-
-/**
- * Strip the <main-ghost-ml>...</main-ghost-ml> block and the
- * <origin-user-input-ghost-ml></origin-user-input-ghost-ml> wrapper tags,
- * keeping only the user's original input text.
- */
-function replaceInjectionKeepUserInput(
-  container: HTMLElement,
-  mainOpen: string,
-  mainClose: string,
-  userOpen: string,
-  userClose: string,
-) {
-  // Work on textContent (DeepSeek renders user messages as plain text)
-  let text = container.textContent || '';
-
-  // 1. Remove the entire <main-ghost-ml>...</main-ghost-ml> block
-  const mStart = text.indexOf(mainOpen);
-  const mEnd = text.indexOf(mainClose);
-  if (mStart !== -1 && mEnd !== -1) {
-    text = text.slice(0, mStart) + text.slice(mEnd + mainClose.length);
-  }
-
-  // 2. Remove the wrapper tags but keep content inside
-  text = text.replace(userOpen, '').replace(userClose, '');
-
-  // 3. Trim leading/trailing whitespace
-  text = text.trim();
-
-  // 4. Apply back
-  container.textContent = text;
-}
-
-/**
- * Clean model response text nodes:
- *  - Strip <model-response-ghost-ml> wrapper tags (keep content)
- *  - Remove <info-control-ghost-ml>...</info-control-ghost-ml> block content
- *
- * Simple per-text-node regex approach. For the cross-node case
- * (tags split across DOM nodes), CSS `display:none` on the custom
- * elements handles it — this is the fallback for escaped-text rendering.
- */
-function cleanResponseTags(
-  container: HTMLElement,
-  respOpen: string,
-  respClose: string,
-  infoOpen: string,
-  infoClose: string,
-) {
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  const nodes: Text[] = [];
-  while (walker.nextNode()) {
-    const tn = walker.currentNode as Text;
-    if (tn.nodeValue?.includes('ghost-ml')) {
-      nodes.push(tn);
-    }
-  }
-
-  for (const tn of nodes) {
-    let val = tn.nodeValue || '';
-
-    // Remove complete info-control block if fully within this text node
-    const re = new RegExp(
-      escapeForRegex(infoOpen) + '[\\s\\S]*?' + escapeForRegex(infoClose),
-      'g',
-    );
-    val = val.replace(re, '');
-
-    // Strip individual ghost-ml tags (opening and closing)
-    val = val
-      .replace(new RegExp(escapeForRegex(respOpen), 'g'), '')
-      .replace(new RegExp(escapeForRegex(respClose), 'g'), '')
-      .replace(new RegExp(escapeForRegex(infoOpen), 'g'), '')
-      .replace(new RegExp(escapeForRegex(infoClose), 'g'), '')
-      .replace(/<\/?need-update-ghost-ml>/g, '')
-      .replace(/<\/?updated-user-bio-ghost-ml>/g, '')
-      .replace(/<\/?need-update-soul-ghost-ml>/g, '')
-      .replace(/<\/?updated-ai-soul-ghost-ml>/g, '');
-
-    tn.nodeValue = val;
-  }
-
-  // Remove text nodes that became empty or only whitespace
-  for (const tn of nodes) {
-    if (tn.parentNode && tn.nodeValue?.trim() === '') {
-      tn.remove();
-    }
-  }
-}
-
-function escapeForRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function isBlockContainer(el: HTMLElement): boolean {
-  const tag = el.tagName;
-  return /^(ARTICLE|SECTION|MAIN|LI|TR|TBODY|TABLE|FORM)$/i.test(tag) ||
-    el.getAttribute('role') === 'article' ||
-    el.classList.contains('message') ||
-    el.classList.contains('chat-message');
-}
-
-/**
- * Remove trailing boolean-only lines left by old control-tag stripping bugs.
- * Examples:
- *   "...正文\n\nfalse\n\nfalse"
- *   "...正文\nfalse"
- */
-function cleanTrailingBooleanResidue(root: Element): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-
-  while (walker.nextNode()) {
-    const tn = walker.currentNode as Text;
-    const val = tn.nodeValue || '';
-    if (!val.includes('false') && !val.includes('true')) continue;
-
-    // Match 1~3 trailing boolean-only lines at end of this text node
-    // Keep the main content before them intact.
-    const next = val.replace(/(?:\r?\n\s*(?:true|false)\s*){1,3}\s*$/g, '');
-    if (next !== val && next.trim().length > 0) {
-      tn.nodeValue = next;
-    }
-  }
-}
 
 /**
  * Element-level cleanup: when the markdown renderer parses ghost-ml tags

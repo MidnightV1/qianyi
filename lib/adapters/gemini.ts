@@ -2,6 +2,7 @@ import type { PlatformAdapter } from './types';
 import { formatInjection, formatTimeOnlyInjection } from '../injection';
 import type { InjectionContext } from '../profile';
 import { deepseekAdapter } from './deepseek';
+import { rewriteStandardSSE } from '../response-filter';
 
 function injectToContentsArray(contents: unknown[], injected: string): boolean {
   for (let index = contents.length - 1; index >= 0; index--) {
@@ -123,6 +124,14 @@ export const geminiAdapter: PlatformAdapter = {
       }
     }
     return deltas;
+  },
+
+  rewriteSSEChunk(
+    sseChunk: string,
+    contentFilter: (delta: string) => string,
+    parseState: Record<string, unknown> & { partial: string },
+  ): string {
+    return rewriteStandardSSE(sseChunk, contentFilter, parseState);
   },
 
   cleanDOM(root: Element): void {

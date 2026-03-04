@@ -2,6 +2,7 @@ import type { PlatformAdapter } from './types';
 import { formatInjection, formatTimeOnlyInjection } from '../injection';
 import type { InjectionContext } from '../profile';
 import { deepseekAdapter } from './deepseek';
+import { rewriteStandardSSE } from '../response-filter';
 
 function injectIntoMessages(messages: unknown[], injected: string): boolean {
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -121,6 +122,14 @@ export const kimiAdapter: PlatformAdapter = {
       }
     }
     return deltas;
+  },
+
+  rewriteSSEChunk(
+    sseChunk: string,
+    contentFilter: (delta: string) => string,
+    parseState: Record<string, unknown> & { partial: string },
+  ): string {
+    return rewriteStandardSSE(sseChunk, contentFilter, parseState);
   },
 
   cleanDOM(root: Element): void {
