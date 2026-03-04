@@ -138,6 +138,8 @@ function setupDOMCleaner() {
   const TRUNC_TARGETS = [
     `</${RESP_TAG}`,            // </model-response-ghost-ml (closing)
     `<info-control-ghost-ml`,   // control block opening
+    `<need-update-soul-ghost-ml`,
+    `<updated-ai-soul-ghost-ml`,
   ];
 
   /**
@@ -229,7 +231,13 @@ function setupDOMCleaner() {
           const tag = node.tagName.toLowerCase();
           if (tag.includes('ghost-ml')) {
             // Synchronous removal — don't let it paint even one frame
-            if (tag === 'info-control-ghost-ml' || tag === 'need-update-ghost-ml' || tag === 'updated-user-bio-ghost-ml') {
+            if (
+              tag === 'info-control-ghost-ml'
+              || tag === 'need-update-ghost-ml'
+              || tag === 'updated-user-bio-ghost-ml'
+              || tag === 'need-update-soul-ghost-ml'
+              || tag === 'updated-ai-soul-ghost-ml'
+            ) {
               node.remove();
             } else if (tag === 'model-response-ghost-ml') {
               // Unwrap: keep children, remove wrapper

@@ -25,7 +25,9 @@ export default defineContentScript({
     style.textContent = [
       'info-control-ghost-ml,',
       'need-update-ghost-ml,',
-      'updated-user-bio-ghost-ml { display: none !important; }',
+      'updated-user-bio-ghost-ml,',
+      'need-update-soul-ghost-ml,',
+      'updated-ai-soul-ghost-ml { display: none !important; }',
       'model-response-ghost-ml { display: contents !important; }',
     ].join('\n');
     (document.head || document.documentElement).appendChild(style);

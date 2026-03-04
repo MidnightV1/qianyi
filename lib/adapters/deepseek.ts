@@ -1,5 +1,14 @@
 import type { PlatformAdapter } from './types';
-import { MAIN_TAG, USER_INPUT_TAG, RESP_TAG, INFO_CTRL_TAG, NEED_UPDATE_TAG, UPDATED_BIO_TAG } from '../constants';
+import {
+  MAIN_TAG,
+  USER_INPUT_TAG,
+  RESP_TAG,
+  INFO_CTRL_TAG,
+  NEED_UPDATE_TAG,
+  UPDATED_BIO_TAG,
+  NEED_UPDATE_SOUL_TAG,
+  UPDATED_SOUL_TAG,
+} from '../constants';
 import { formatInjection, formatTimeOnlyInjection } from '../injection';
 import type { InjectionContext } from '../profile';
 
@@ -363,7 +372,9 @@ function cleanResponseTags(
       .replace(new RegExp(escapeForRegex(infoOpen), 'g'), '')
       .replace(new RegExp(escapeForRegex(infoClose), 'g'), '')
       .replace(/<\/?need-update-ghost-ml>/g, '')
-      .replace(/<\/?updated-user-bio-ghost-ml>/g, '');
+      .replace(/<\/?updated-user-bio-ghost-ml>/g, '')
+      .replace(/<\/?need-update-soul-ghost-ml>/g, '')
+      .replace(/<\/?updated-ai-soul-ghost-ml>/g, '');
 
     tn.nodeValue = val;
   }
@@ -404,6 +415,8 @@ function cleanGhostElements(root: Element): void {
     INFO_CTRL_TAG,
     NEED_UPDATE_TAG,
     UPDATED_BIO_TAG,
+    NEED_UPDATE_SOUL_TAG,
+    UPDATED_SOUL_TAG,
   ].join(',');
 
   for (const el of root.querySelectorAll(removeSelectors)) {
