@@ -223,6 +223,15 @@ export default defineContentScript({
 
           if (body && interceptable && shouldInject(body)) {
             const modified = adapter.modifyRequestBody(body, ctx);
+            if (sniffEnabled) {
+              let applied = false;
+              try {
+                applied = JSON.stringify(modified).includes('<main-ghost-ml>');
+              } catch {
+                applied = false;
+              }
+              sniffLog(`FETCH injectionApplied=${applied}`);
+            }
 
             if (extracted.source === 'request' && input instanceof Request && !init?.body) {
               input = new Request(input, { body: JSON.stringify(modified) });
@@ -304,6 +313,15 @@ export default defineContentScript({
 
           if (canInject && shouldInject(parsed)) {
             const modified = adapter.modifyRequestBody(parsed, ctx!);
+            if (sniffEnabled) {
+              let applied = false;
+              try {
+                applied = JSON.stringify(modified).includes('<main-ghost-ml>');
+              } catch {
+                applied = false;
+              }
+              sniffLog(`XHR injectionApplied=${applied}`);
+            }
             recordInjection(parsed);
             console.log('[Qianyi] ✅ Intercepted (XHR):', url, `[${ctx!.mode}]`);
             setupResponseMonitor(this, true);
@@ -351,6 +369,15 @@ export default defineContentScript({
           if (parsed && adapter.shouldIntercept(window.location.href, parsed)) {
             if (ctx.mode !== 'off' && !isContextEmpty(ctx) && shouldInject(parsed)) {
               const modified = adapter.modifyRequestBody(parsed, ctx);
+              if (sniffEnabled) {
+                let applied = false;
+                try {
+                  applied = JSON.stringify(modified).includes('<main-ghost-ml>');
+                } catch {
+                  applied = false;
+                }
+                sniffLog(`WS injectionApplied=${applied}`);
+              }
               recordInjection(parsed);
               console.log('[Qianyi] ✅ Intercepted (WS):', adapter.name, `[${ctx.mode}]`);
               return _wsSend.call(this, JSON.stringify(modified));

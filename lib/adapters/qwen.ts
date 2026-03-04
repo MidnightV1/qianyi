@@ -3,28 +3,90 @@ import { formatInjection, formatTimeOnlyInjection } from '../injection';
 import type { InjectionContext } from '../profile';
 import { deepseekAdapter } from './deepseek';
 
-function injectIntoMessages(messages: unknown[], injected: string): boolean {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index] as Record<string, unknown>;
-    if (!message || message.role !== 'user') continue;
+function normalizeRole(message: Record<string, unknown>): string {
+  const role = message.role;
+  if (typeof role === 'string') return role.toLowerCase();
+  const sender = message.sender;
+  if (typeof sender === 'string') return sender.toLowerCase();
+  const msgType = message.type;
+  if (typeof msgType === 'string') return msgType.toLowerCase();
+  return '';
+}
 
-    if (typeof message.content === 'string') {
-      messages[index] = { ...message, content: injected };
-      return true;
+function readMessageText(message: Record<string, unknown>): string | null {
+  if (typeof message.content === 'string') return message.content;
+
+  if (Array.isArray(message.content)) {
+    for (let index = message.content.length - 1; index >= 0; index--) {
+      const part = message.content[index] as Record<string, unknown>;
+      if (typeof part?.text === 'string') return part.text;
+      if (typeof part?.value === 'string') return part.value;
     }
+  }
 
-    if (Array.isArray(message.content)) {
-      const parts = [...message.content];
-      for (let partIndex = parts.length - 1; partIndex >= 0; partIndex--) {
-        const part = parts[partIndex] as Record<string, unknown>;
-        if (typeof part?.text === 'string') {
-          parts[partIndex] = { ...part, text: injected };
-          messages[index] = { ...message, content: parts };
-          return true;
-        }
+  if (typeof message.text === 'string') return message.text;
+  if (typeof message.query === 'string') return message.query;
+  if (typeof message.prompt === 'string') return message.prompt;
+  return null;
+}
+
+function writeMessageText(message: Record<string, unknown>, injected: string): Record<string, unknown> {
+  if (typeof message.content === 'string') {
+    return { ...message, content: injected };
+  }
+
+  if (Array.isArray(message.content)) {
+    const parts = [...message.content];
+    for (let index = parts.length - 1; index >= 0; index--) {
+      const part = parts[index] as Record<string, unknown>;
+      if (typeof part?.text === 'string') {
+        parts[index] = { ...part, text: injected };
+        return { ...message, content: parts };
+      }
+      if (typeof part?.value === 'string') {
+        parts[index] = { ...part, value: injected };
+        return { ...message, content: parts };
       }
     }
   }
+
+  if (typeof message.text === 'string') return { ...message, text: injected };
+  if (typeof message.query === 'string') return { ...message, query: injected };
+  if (typeof message.prompt === 'string') return { ...message, prompt: injected };
+
+  return message;
+}
+
+function injectIntoMessages(messages: unknown[], formatter: (source: string) => string): boolean {
+  let fallbackIndex = -1;
+
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index] as Record<string, unknown>;
+    if (!message) continue;
+
+    const source = readMessageText(message);
+    if (!source) continue;
+
+    const role = normalizeRole(message);
+    const looksUser = role === 'user' || role === 'human' || role === 'sender_user' || role === 'input';
+
+    if (looksUser) {
+      messages[index] = writeMessageText(message, formatter(source));
+      return true;
+    }
+
+    if (fallbackIndex === -1) fallbackIndex = index;
+  }
+
+  if (fallbackIndex !== -1) {
+    const message = messages[fallbackIndex] as Record<string, unknown>;
+    const source = readMessageText(message);
+    if (source) {
+      messages[fallbackIndex] = writeMessageText(message, formatter(source));
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -59,7 +121,7 @@ function tryModifyContainer(container: Record<string, unknown>, ctx: InjectionCo
 
   if (Array.isArray(container.messages)) {
     const next = [...container.messages];
-    if (injectIntoMessages(next as unknown[], formatInjection(ctx, source))) {
+    if (injectIntoMessages(next as unknown[], (messageText) => formatInjection(ctx, messageText || source))) {
       container.messages = next;
       return true;
     }
@@ -91,8 +153,10 @@ export const qwenAdapter: PlatformAdapter = {
       pathname = url;
     }
 
-    if (pathname.includes('/chat') || pathname.includes('/completion') || pathname.includes('/completions')) return true;
-    if (pathname.includes('/conversation') || pathname.includes('/stream')) return true;
+    if (pathname.includes('/api/v2/chat')) return true;
+    if (pathname.includes('/api/v1/chat')) return true;
+    if (pathname.includes('/completion') || pathname.includes('/completions')) return true;
+    if (pathname.includes('/stream') && pathname.includes('/chat')) return true;
 
     if (!body) return false;
     if (hasInjectableField(body)) return true;
