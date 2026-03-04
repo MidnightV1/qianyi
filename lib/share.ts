@@ -15,12 +15,18 @@ const PREFIX = 'qys://';
 /* ── Compression (DeflateRaw via CompressionStream) ── */
 
 async function compress(input: string): Promise<Uint8Array> {
+  if (typeof CompressionStream === 'undefined') {
+    throw new Error('CompressionStream unavailable');
+  }
   const blob = new Blob([new TextEncoder().encode(input)]);
   const stream = blob.stream().pipeThrough(new CompressionStream('deflate-raw'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 async function decompress(data: Uint8Array): Promise<string> {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('DecompressionStream unavailable');
+  }
   const blob = new Blob([data]);
   const stream = blob.stream().pipeThrough(new DecompressionStream('deflate-raw'));
   return new Response(stream).text();
@@ -48,8 +54,13 @@ function fromBase64Url(str: string): Uint8Array {
 /** Encode persona → 潜忆匙 (deflate + URL-safe Base64) */
 export async function encodePersona(persona: AIPersona): Promise<string> {
   const json = JSON.stringify({ n: persona.name, i: persona.identity, s: persona.soul });
-  const compressed = await compress(json);
-  return PREFIX + toBase64Url(compressed);
+  try {
+    const compressed = await compress(json);
+    return PREFIX + toBase64Url(compressed);
+  } catch {
+    const plain = new TextEncoder().encode(json);
+    return PREFIX + toBase64Url(plain);
+  }
 }
 
 /** Decode 潜忆匙 → persona. Supports v2 (compressed) and v1 (plain Base64). */
@@ -63,7 +74,7 @@ export async function decodePersona(code: string): Promise<AIPersona | null> {
     try {
       json = await decompress(fromBase64Url(b64));
     } catch {
-      json = decodeURIComponent(escape(atob(b64)));
+      json = new TextDecoder().decode(fromBase64Url(b64));
     }
 
     const obj = JSON.parse(json);

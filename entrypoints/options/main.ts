@@ -660,19 +660,27 @@ async function showShareModal(persona: AIPersona) {
   // Show overlay first
   overlay.classList.add('show');
 
-  // Generate both in parallel
-  const [code, qrDataUrl] = await Promise.all([
-    encodePersona(persona),
-    generateQR(persona),
-  ]);
+  try {
+    // Generate both in parallel
+    const [code, qrDataUrl] = await Promise.all([
+      encodePersona(persona),
+      generateQR(persona),
+    ]);
 
-  codeArea.value = code;
-  sub.textContent = `「${sharePersonaName}」· ${code.length} 字符`;
+    codeArea.value = code;
+    sub.textContent = `「${sharePersonaName}」· ${code.length} 字符`;
 
-  if (qrDataUrl) {
-    qrWrap.innerHTML = `<img src="${qrDataUrl}" alt="QR" class="share-card-img" />`;
-  } else {
-    qrWrap.innerHTML = `<div class="share-qr-none">内容过长（超出 QR 容量 ${QR_MAX_BYTES}B），请用文本码分享</div>`;
+    if (qrDataUrl) {
+      qrWrap.innerHTML = `<img src="${qrDataUrl}" alt="QR" class="share-card-img" />`;
+    } else {
+      qrWrap.innerHTML = `<div class="share-qr-none">内容过长（超出 QR 容量 ${QR_MAX_BYTES}B），请用文本码分享</div>`;
+    }
+  } catch (e) {
+    console.warn('⚠️ share generate failed:', e);
+    sub.textContent = `「${sharePersonaName}」· 生成失败`;
+    qrWrap.innerHTML = '<div class="share-qr-none">二维码生成失败，请复制文本码分享</div>';
+    codeArea.value = '';
+    flash('⚠️ 分享码生成失败，请重试');
   }
 }
 
