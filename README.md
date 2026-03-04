@@ -41,7 +41,7 @@
 
 ### 方法一：加载已解压的扩展程序（推荐，最稳定）
 
-1. 下载 [**qianyi-1.0.0-chrome.zip**](https://github.com/MidnightV1/qianyi/releases/download/1.0.0/qianyi-1.0.0-chrome.zip) 并解压
+1. 下载 [**qianyi-1.0.1-chrome.zip**](https://github.com/MidnightV1/qianyi/releases/download/1.0.1/qianyi-1.0.1-chrome.zip) 并解压
 2. 解压到一个固定位置（**不要解压后移动或删除**）
 3. Chrome 地址栏输入 `chrome://extensions/`
 4. 开启右上角「**开发者模式**」

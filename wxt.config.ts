@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: '潜忆 Qianyi',
     description: '让 AI 记住你——非侵入式 LLM 记忆注入',
-    version: '0.1.0',
+    version: '1.0.1',
     permissions: ['storage'],
     host_permissions: ['*://chat.deepseek.com/*', 'https://api.github.com/*'],
     icons: {
