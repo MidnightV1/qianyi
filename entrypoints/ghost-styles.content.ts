@@ -14,6 +14,8 @@ export default defineContentScript({
     '*://chat.qwen.ai/*',
     '*://tongyi.aliyun.com/*',
     '*://tongyi.com/*',
+    '*://qianwen.com/*',
+    '*://www.qianwen.com/*',
   ],
   runAt: 'document_start',
 

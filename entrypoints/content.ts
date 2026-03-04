@@ -27,6 +27,8 @@ const SCRIPT_MATCHES = [
   '*://chat.qwen.ai/*',
   '*://tongyi.aliyun.com/*',
   '*://tongyi.com/*',
+  '*://qianwen.com/*',
+  '*://www.qianwen.com/*',
 ];
 
 export default defineContentScript({

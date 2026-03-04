@@ -15,6 +15,8 @@ export default defineConfig({
       '*://chat.qwen.ai/*',
       '*://tongyi.aliyun.com/*',
       '*://tongyi.com/*',
+      '*://qianwen.com/*',
+      '*://www.qianwen.com/*',
       'https://api.github.com/*',
     ],
     icons: {

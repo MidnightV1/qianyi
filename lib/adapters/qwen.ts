@@ -40,7 +40,7 @@ function injectAnyStringField(body: Record<string, unknown>, formatter: (text: s
 export const qwenAdapter: PlatformAdapter = {
   id: 'qwen',
   name: 'Qwen',
-  matchPatterns: ['*://chat.qwen.ai/*', '*://tongyi.aliyun.com/*', '*://tongyi.com/*'],
+  matchPatterns: ['*://chat.qwen.ai/*', '*://tongyi.aliyun.com/*', '*://tongyi.com/*', '*://qianwen.com/*', '*://www.qianwen.com/*'],
 
   capabilities: {
     knowsCurrentTime: true,

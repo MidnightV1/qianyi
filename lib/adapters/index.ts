@@ -17,7 +17,13 @@ export function getAdapterForHost(hostname: string): PlatformAdapter {
   if (lowered === 'chat.deepseek.com') return deepseekAdapter;
   if (lowered === 'gemini.google.com' || lowered === 'aistudio.google.com') return geminiAdapter;
   if (lowered === 'kimi.moonshot.cn') return kimiAdapter;
-  if (lowered === 'chat.qwen.ai' || lowered === 'tongyi.aliyun.com' || lowered === 'tongyi.com') return qwenAdapter;
+  if (
+    lowered === 'chat.qwen.ai'
+    || lowered === 'tongyi.aliyun.com'
+    || lowered === 'tongyi.com'
+    || lowered === 'qianwen.com'
+    || lowered === 'www.qianwen.com'
+  ) return qwenAdapter;
 
   return deepseekAdapter;
 }
