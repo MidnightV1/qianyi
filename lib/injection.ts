@@ -96,11 +96,10 @@ export function formatInjection(ctx: InjectionContext, userInput: string): strin
 
   parts.push(`</${MAIN_TAG}>`);
 
-  parts.push(`<${USER_INPUT_TAG}>`);
-  parts.push(userInput);
-  parts.push(`</${USER_INPUT_TAG}>`);
-
-  return parts.join('\n');
+  // User input tag directly concatenated — no newlines between tags.
+  // Newlines here would survive sanitizer tag-stripping and appear as
+  // visible blank lines before the user's text.
+  return parts.join('\n') + `<${USER_INPUT_TAG}>${userInput}</${USER_INPUT_TAG}>`;
 }
 
 /**

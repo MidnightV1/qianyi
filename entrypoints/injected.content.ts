@@ -421,13 +421,15 @@ export default defineContentScript({
 
       const ct = response.headers.get('content-type') || '';
 
-      // Track 1: SSE stream filtering for injected requests
-      if (wasInjected) {
+      // Track 1: SSE stream filtering
+      // Applied to injected requests AND event-stream responses (covers two-request
+      // architectures where the streaming response is a separate fetch from injection).
+      if (wasInjected || ct.includes('event-stream')) {
         return wrapSSEFilter(response);
       }
 
-      // Track 2: JSON / text responses (conversation history on page load)
-      if (ct.includes('json') || ct.includes('text/plain')) {
+      // Track 2: JSON / text responses (conversation history, config, etc.)
+      if (ct.includes('json') || ct.includes('text')) {
         return wrapJSONFilter(response);
       }
 
@@ -445,7 +447,15 @@ export default defineContentScript({
       const ts = new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
           const text = decoder.decode(chunk, { stream: true });
-          const rewritten = adapter.rewriteSSEChunk(text, (d) => filter.feed(d), state);
+          let rewritten = adapter.rewriteSSEChunk(text, (d) => filter.feed(d), state);
+
+          // Safety net: if adapter-level SSE parsing missed ghost-ml
+          // (e.g. non-standard SSE format, content in unexpected field),
+          // fall back to text-level regex stripping.
+          if (rewritten.includes('ghost-ml')) {
+            rewritten = stripGhostML(rewritten);
+          }
+
           if (rewritten) controller.enqueue(encoder.encode(rewritten));
 
           if (!infoReported && filter.infoControl) {
@@ -469,10 +479,13 @@ export default defineContentScript({
         },
       });
 
+      const headers = new Headers(response.headers);
+      headers.delete('content-length');
+
       return new Response(response.body!.pipeThrough(ts), {
         status: response.status,
         statusText: response.statusText,
-        headers: response.headers,
+        headers,
       });
     }
 
@@ -495,10 +508,13 @@ export default defineContentScript({
         },
       });
 
+      const headers = new Headers(response.headers);
+      headers.delete('content-length');
+
       return new Response(response.body!.pipeThrough(ts), {
         status: response.status,
         statusText: response.statusText,
-        headers: response.headers,
+        headers,
       });
     }
 
