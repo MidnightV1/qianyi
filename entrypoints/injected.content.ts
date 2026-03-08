@@ -422,18 +422,18 @@ export default defineContentScript({
       const ct = response.headers.get('content-type') || '';
 
       // Track 1: SSE stream filtering
-      // Applied to injected requests AND event-stream responses (covers two-request
-      // architectures where the streaming response is a separate fetch from injection).
       if (wasInjected || ct.includes('event-stream')) {
         return wrapSSEFilter(response);
       }
 
-      // Track 2: JSON / text responses (conversation history, config, etc.)
-      if (ct.includes('json') || ct.includes('text')) {
-        return wrapJSONFilter(response);
+      // Skip binary content
+      if (/\b(image|audio|video|font|wasm)\b/.test(ct)) {
+        return response;
       }
 
-      return response;
+      // Track 2: All other responses (JSON, text, HTML, unknown)
+      // Buffer full body and strip ghost-ml to handle cross-chunk boundaries.
+      return wrapTextFilter(response);
     }
 
     /** Wrap a streaming SSE Response with adapter-specific ghost-ml rewriting. */
@@ -490,21 +490,25 @@ export default defineContentScript({
     }
 
     /**
-     * Wrap a JSON Response with lightweight ghost-ml stripping.
-     * Only decodes/re-encodes when a chunk actually contains ghost-ml.
+     * Wrap a text-like Response: buffer full body, apply stripGhostML, re-emit.
+     * Handles cross-chunk ghost-ml blocks that per-chunk regex misses.
+     * History JSON is finite-sized; full buffering is safe.
      */
-    function wrapJSONFilter(response: Response): Response {
+    function wrapTextFilter(response: Response): Response {
       const decoder = new TextDecoder();
       const encoder = new TextEncoder();
+      const chunks: string[] = [];
 
       const ts = new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          const text = decoder.decode(chunk, { stream: true });
-          if (text.includes('ghost-ml')) {
-            controller.enqueue(encoder.encode(stripGhostML(text)));
-          } else {
-            controller.enqueue(chunk);
+        transform(chunk) {
+          chunks.push(decoder.decode(chunk, { stream: true }));
+        },
+        flush(controller) {
+          let fullText = chunks.join('') + decoder.decode();
+          if (fullText.includes('ghost-ml')) {
+            fullText = stripGhostML(fullText);
           }
+          controller.enqueue(encoder.encode(fullText));
         },
       });
 

@@ -10,6 +10,7 @@ import {
   UPDATED_SOUL_TAG,
 } from '../constants';
 import { formatInjection, formatTimeOnlyInjection } from '../injection';
+import { stripGhostML } from '../response-filter';
 import type { InjectionContext } from '../profile';
 
 /**
@@ -387,6 +388,18 @@ export const deepseekAdapter: PlatformAdapter = {
     // The response-stream filter handles the primary cleanup; this is a
     // belt-and-suspenders fallback for edge cases (SSR, EventSource, etc.).
     cleanGhostElements(root);
+
+    // Text-level cleanup — when sanitizer strips ghost-ml tags but leaves content
+    // as literal text. Walk text nodes and apply regex cleanup.
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const tn = walker.currentNode as Text;
+      const val = tn.nodeValue || '';
+      if (val.includes('ghost-ml')) {
+        const cleaned = stripGhostML(val);
+        if (cleaned !== val) tn.nodeValue = cleaned;
+      }
+    }
   },
 };
 

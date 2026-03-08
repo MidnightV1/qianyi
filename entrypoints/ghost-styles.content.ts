@@ -23,12 +23,14 @@ export default defineContentScript({
     const style = document.createElement('style');
     style.id = 'ghost-context-styles';
     style.textContent = [
+      'main-ghost-ml,',
       'info-control-ghost-ml,',
       'need-update-ghost-ml,',
       'updated-user-bio-ghost-ml,',
       'need-update-soul-ghost-ml,',
       'updated-ai-soul-ghost-ml { display: none !important; }',
-      'model-response-ghost-ml { display: contents !important; }',
+      'model-response-ghost-ml,',
+      'origin-user-input-ghost-ml { display: contents !important; }',
     ].join('\n');
     (document.head || document.documentElement).appendChild(style);
   },
