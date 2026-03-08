@@ -56,7 +56,7 @@
 3. 将 `.crx` 文件**拖入**该页面
 4. 如果拖入无效，请使用方法一
 
-安装后，打开 [chat.deepseek.com](https://chat.deepseek.com) 或 [kimi.com](https://kimi.com) / [chat.qwen.ai](https://chat.qwen.ai) / [gemini.google.com](https://gemini.google.com)，你会在浏览器右上角看到潜忆图标。
+安装后，打开 [chat.deepseek.com](https://chat.deepseek.com) 或 [kimi.com](https://kimi.com) / [qianwen.com](https://www.qianwen.com/) / [gemini.google.com](https://gemini.google.com)，你会在浏览器右上角看到潜忆图标。
 
 ---
 
