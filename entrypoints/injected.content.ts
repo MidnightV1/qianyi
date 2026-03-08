@@ -421,19 +421,19 @@ export default defineContentScript({
 
       const ct = response.headers.get('content-type') || '';
 
-      // Track 1: SSE stream filtering
+      // Track 1: SSE stream filtering for injected requests
       if (wasInjected || ct.includes('event-stream')) {
         return wrapSSEFilter(response);
       }
 
-      // Skip binary content
-      if (/\b(image|audio|video|font|wasm)\b/.test(ct)) {
-        return response;
+      // Track 2: JSON / NDJSON responses only (conversation history on refresh).
+      // Narrow scope: only buffer-and-strip responses that are likely to carry
+      // stored conversation data. JS/CSS/HTML/images pass through untouched.
+      if (ct.includes('json')) {
+        return wrapTextFilter(response);
       }
 
-      // Track 2: All other responses (JSON, text, HTML, unknown)
-      // Buffer full body and strip ghost-ml to handle cross-chunk boundaries.
-      return wrapTextFilter(response);
+      return response;
     }
 
     /** Wrap a streaming SSE Response with adapter-specific ghost-ml rewriting. */
