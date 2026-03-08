@@ -37,13 +37,6 @@ export default defineContentScript({
 
   main() {
     const adapter: PlatformAdapter = getAdapterForHost(window.location.hostname);
-    const sniffEnabled = [
-      'chat.qwen.ai',
-      'tongyi.aliyun.com',
-      'tongyi.com',
-      'qianwen.com',
-      'www.qianwen.com',
-    ].includes(window.location.hostname);
 
     let ctx: InjectionContext | null = null;
 
@@ -91,20 +84,6 @@ export default defineContentScript({
       return (input as Request).url;
     }
 
-    function shortText(input: string, max = 400): string {
-      const singleLine = input.replace(/\s+/g, ' ').trim();
-      return singleLine.length > max ? `${singleLine.slice(0, max)}…` : singleLine;
-    }
-
-    function sniffLog(title: string, extra?: unknown) {
-      if (!sniffEnabled) return;
-      if (extra === undefined) {
-        console.log(`[Qianyi][Sniff] ${title}`);
-      } else {
-        console.log(`[Qianyi][Sniff] ${title}`, extra);
-      }
-    }
-
     /** Extract JSON body from various BodyInit types */
     async function extractBody(
       body: BodyInit | null | undefined,
@@ -126,17 +105,6 @@ export default defineContentScript({
       } catch {
         return undefined;
       }
-    }
-
-    async function extractRawBodyText(body: BodyInit | null | undefined): Promise<string | undefined> {
-      if (!body) return undefined;
-      if (typeof body === 'string') return body;
-      if (body instanceof Blob) return await body.text();
-      if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
-        return new TextDecoder().decode(body);
-      }
-      if (body instanceof URLSearchParams) return body.toString();
-      return undefined;
     }
 
     async function extractFetchBody(
@@ -188,51 +156,12 @@ export default defineContentScript({
           || 'GET'
         ).toUpperCase();
 
-        if (sniffEnabled) {
-          let bodyText: string | undefined;
-          if (init?.body) {
-            bodyText = await extractRawBodyText(init.body);
-          } else if (input instanceof Request) {
-            try {
-              bodyText = await input.clone().text();
-            } catch {
-              bodyText = undefined;
-            }
-          }
-          sniffLog(`FETCH ${method} ${url}`);
-          if (bodyText) {
-            try {
-              const parsed = JSON.parse(bodyText) as Record<string, unknown>;
-              sniffLog('FETCH body keys', Object.keys(parsed));
-            } catch {
-              sniffLog('FETCH body preview', shortText(bodyText));
-            }
-          }
-        }
-
         if (ctx && ctx.mode !== 'off' && !isContextEmpty(ctx)) {
           const extracted = await extractFetchBody(input, init);
           const body = extracted.body;
 
-          const interceptable = !!(body && adapter.shouldIntercept(url, body));
-          if (sniffEnabled && body) {
-            sniffLog(`FETCH interceptable=${interceptable} injectable=${shouldInject(body)}`);
-            if (!interceptable) {
-              sniffLog('FETCH adapter miss keys', Object.keys(body));
-            }
-          }
-
-          if (body && interceptable && shouldInject(body)) {
+          if (body && adapter.shouldIntercept(url, body) && shouldInject(body)) {
             const modified = adapter.modifyRequestBody(body, ctx);
-            if (sniffEnabled) {
-              let applied = false;
-              try {
-                applied = JSON.stringify(modified).includes('<main-ghost-ml>');
-              } catch {
-                applied = false;
-              }
-              sniffLog(`FETCH injectionApplied=${applied}`);
-            }
 
             if (extracted.source === 'request' && input instanceof Request && !init?.body) {
               input = new Request(input, { body: JSON.stringify(modified) });
@@ -287,9 +216,6 @@ export default defineContentScript({
     XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null) {
       try {
         const url: string = (this as any).__ghostUrl || '';
-        if (sniffEnabled) {
-          sniffLog(`XHR SEND ${url}`);
-        }
 
         // Check if this is a chat completion request
         let isChatRequest = false;
@@ -302,16 +228,7 @@ export default defineContentScript({
 
           if (parsed && adapter.shouldIntercept(url, parsed)) {
             isChatRequest = true;
-            if (sniffEnabled) {
-              sniffLog('XHR body keys', Object.keys(parsed));
-            }
-          } else if (sniffEnabled && parsed) {
-            sniffLog('XHR adapter miss keys', Object.keys(parsed));
           }
-        }
-
-        if (sniffEnabled && typeof body === 'string' && !parsed) {
-          sniffLog('XHR non-JSON body preview', shortText(body));
         }
 
         // Determine injection type and set up response monitor
@@ -320,15 +237,6 @@ export default defineContentScript({
 
           if (canInject && shouldInject(parsed)) {
             const modified = adapter.modifyRequestBody(parsed, ctx!);
-            if (sniffEnabled) {
-              let applied = false;
-              try {
-                applied = JSON.stringify(modified).includes('<main-ghost-ml>');
-              } catch {
-                applied = false;
-              }
-              sniffLog(`XHR injectionApplied=${applied}`);
-            }
             recordInjection(parsed);
             console.log('[Qianyi] ✅ Intercepted (XHR):', url, `[${ctx!.mode}]`);
             setupResponseFilter(this);
@@ -354,10 +262,6 @@ export default defineContentScript({
     const _wsSend = WebSocket.prototype.send;
     WebSocket.prototype.send = function (data: string | ArrayBufferLike | Blob | ArrayBufferView) {
       try {
-        if (sniffEnabled) {
-          sniffLog(`WS SEND type=${typeof data}`);
-        }
-
         if (typeof data === 'string' && ctx) {
           let parsed: Record<string, unknown> | undefined;
           try {
@@ -366,23 +270,9 @@ export default defineContentScript({
             parsed = undefined;
           }
 
-          if (sniffEnabled) {
-            if (parsed) sniffLog('WS body keys', Object.keys(parsed));
-            else sniffLog('WS body preview', shortText(data));
-          }
-
           if (parsed && adapter.shouldIntercept(window.location.href, parsed)) {
             if (ctx.mode !== 'off' && !isContextEmpty(ctx) && shouldInject(parsed)) {
               const modified = adapter.modifyRequestBody(parsed, ctx);
-              if (sniffEnabled) {
-                let applied = false;
-                try {
-                  applied = JSON.stringify(modified).includes('<main-ghost-ml>');
-                } catch {
-                  applied = false;
-                }
-                sniffLog(`WS injectionApplied=${applied}`);
-              }
               recordInjection(parsed);
               console.log('[Qianyi] ✅ Intercepted (WS):', adapter.name, `[${ctx.mode}]`);
               return _wsSend.call(this, JSON.stringify(modified));
@@ -395,9 +285,6 @@ export default defineContentScript({
                 return _wsSend.call(this, JSON.stringify(modified));
               }
             }
-          }
-          if (sniffEnabled && parsed && !adapter.shouldIntercept(window.location.href, parsed)) {
-            sniffLog('WS adapter miss keys', Object.keys(parsed));
           }
         }
       } catch (err) {
