@@ -11,6 +11,8 @@ export default defineContentScript({
     '*://gemini.google.com/*',
     '*://aistudio.google.com/*',
     '*://kimi.moonshot.cn/*',
+    '*://kimi.com/*',
+    '*://www.kimi.com/*',
     '*://chat.qwen.ai/*',
     '*://tongyi.aliyun.com/*',
     '*://tongyi.com/*',
@@ -28,7 +30,7 @@ export default defineContentScript({
       'need-update-ghost-ml,',
       'updated-user-bio-ghost-ml,',
       'need-update-soul-ghost-ml,',
-      'updated-ai-soul-ghost-ml { display: none !important; }',
+      'updated-ai-soul-ghost-ml { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; line-height: 0 !important; font-size: 0 !important; }',
       'model-response-ghost-ml,',
       'origin-user-input-ghost-ml { display: contents !important; }',
     ].join('\n');

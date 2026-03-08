@@ -5,13 +5,15 @@ export default defineConfig({
   manifest: {
     name: '潜忆 Qianyi',
     description: '让 AI 记住你——非侵入式 LLM 记忆注入',
-    version: '1.0.1',
+    version: '1.1.0',
     permissions: ['storage'],
     host_permissions: [
       '*://chat.deepseek.com/*',
       '*://gemini.google.com/*',
       '*://aistudio.google.com/*',
       '*://kimi.moonshot.cn/*',
+      '*://kimi.com/*',
+      '*://www.kimi.com/*',
       '*://chat.qwen.ai/*',
       '*://tongyi.aliyun.com/*',
       '*://tongyi.com/*',

@@ -31,7 +31,7 @@
 > 1. **仅在网页端生效** —— 手机 App、桌面客户端中不会有潜忆的效果
 > 2. **可能导致 App 端显示异常** —— 注入的隐藏标记在网页端会被自动清理，但在 App 中查看同一会话时可能看到残留的标记文本，这是预期行为
 > 3. **请勿在敏感/正式对话中使用** —— 潜忆通过修改请求内容实现注入，虽然不会上传任何数据到第三方，但本质上改变了你发送给 AI 的内容
-> 4. **当前仅支持 DeepSeek** —— 更多平台适配正在开发中
+> 4. **目前支持 DeepSeek、Kimi、通义千问（Qwen）、Gemini** —— 更多平台适配开发中
 >
 > 📌 如果你在 App 上看到奇怪的标签，那就是潜忆的注入痕迹。关闭潜忆或开启新对话即可恢复正常。
 
@@ -41,7 +41,7 @@
 
 ### 方法一：加载已解压的扩展程序（推荐，最稳定）
 
-1. 下载 [**qianyi-1.0.1-chrome.zip**](https://github.com/MidnightV1/qianyi/releases/download/1.0.1/qianyi-1.0.1-chrome.zip) 并解压
+1. 下载 [**qianyi-1.1.0-chrome.zip**](https://github.com/MidnightV1/qianyi/releases/download/1.1.0/qianyi-1.1.0-chrome.zip) 并解压
 2. 解压到一个固定位置（**不要解压后移动或删除**）
 3. Chrome 地址栏输入 `chrome://extensions/`
 4. 开启右上角「**开发者模式**」
@@ -56,7 +56,7 @@
 3. 将 `.crx` 文件**拖入**该页面
 4. 如果拖入无效，请使用方法一
 
-安装后，打开 [chat.deepseek.com](https://chat.deepseek.com)，你会在浏览器右上角看到潜忆图标。
+安装后，打开 [chat.deepseek.com](https://chat.deepseek.com) 或 [kimi.com](https://kimi.com) / [chat.qwen.ai](https://chat.qwen.ai) / [gemini.google.com](https://gemini.google.com)，你会在浏览器右上角看到潜忆图标。
 
 ---
 
@@ -110,14 +110,14 @@
 | 平台 | 状态 |
 |------|------|
 | DeepSeek | ✅ 已支持 |
-| 通义千问（Qwen） | ✅ 已支持（Beta） |
-| Gemini | ✅ 已支持（Beta） |
-| Kimi | ✅ 已支持（Beta） |
+| Kimi | ✅ 已支持 |
+| 通义千问（Qwen） | ✅ 已支持 |
+| Gemini | ✅ 已支持 |
 | ChatGPT | 🔜 计划中 |
 
 ## 后续计划
 
-- **多平台支持** —— 通义千问、Gemini、ChatGPT、Kimi 等主流 AI 平台陆续适配
+- **更多平台** —— ChatGPT 等主流 AI 平台陆续适配
 - **跨会话记忆** —— 打通会话间的记忆链路，不再局限于单次对话
 - **对话摘录** —— 自动从对话中提取关键信息，沉淀为长期记忆
 - **记忆胶囊** —— 将身份 + 人设 + 成长记录打包为可迁移的个人 AI 记忆档案

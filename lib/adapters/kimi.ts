@@ -41,7 +41,7 @@ function injectGeneric(body: Record<string, unknown>, formatter: (source: string
 export const kimiAdapter: PlatformAdapter = {
   id: 'kimi',
   name: 'Kimi',
-  matchPatterns: ['*://kimi.moonshot.cn/*'],
+  matchPatterns: ['*://kimi.moonshot.cn/*', '*://kimi.com/*', '*://www.kimi.com/*'],
 
   capabilities: {
     knowsCurrentTime: true,
@@ -50,18 +50,72 @@ export const kimiAdapter: PlatformAdapter = {
   shouldIntercept(url: string, body?: Record<string, unknown>): boolean {
     let pathname = '';
     try {
-      pathname = new URL(url, 'https://kimi.moonshot.cn').pathname;
+      pathname = new URL(url, 'https://kimi.com').pathname;
     } catch {
       pathname = url;
     }
 
-    if (pathname.includes('/chat') || pathname.includes('/completion') || pathname.includes('/stream')) {
+    // Skip gRPC-Web endpoints — handled by shouldInterceptBinary
+    if (pathname.includes('/apiv2/')) return false;
+
+    // Legacy REST API
+    if (pathname.includes('/completion') || pathname.includes('/stream')) {
       return true;
     }
 
     if (!body) return false;
     if (Array.isArray(body.messages)) return true;
     return ['prompt', 'query', 'input', 'message', 'content', 'text'].some((key) => typeof body[key] === 'string');
+  },
+
+  shouldInterceptBinary(url: string, _body: Uint8Array): boolean {
+    try {
+      const pathname = new URL(url, 'https://kimi.com').pathname;
+      return pathname.endsWith('ChatService/Chat');
+    } catch {
+      return url.includes('ChatService/Chat');
+    }
+  },
+
+  modifyBinaryRequestBody(body: Uint8Array, ctx: InjectionContext): Uint8Array | null {
+    // gRPC-Web frame: [1B flag][4B big-endian length][JSON payload]
+    if (body.length < 5) return null;
+    const flag = body[0];
+    const length = (body[1] << 24) | (body[2] << 16) | (body[3] << 8) | body[4];
+    if (5 + length > body.length) return null;
+
+    let json: Record<string, unknown>;
+    try {
+      json = JSON.parse(new TextDecoder().decode(body.subarray(5, 5 + length)));
+    } catch {
+      return null;
+    }
+
+    // Locate user message in blocks
+    const msg = json.message as Record<string, unknown> | undefined;
+    if (!msg || msg.role !== 'user') return null;
+    const blocks = msg.blocks as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(blocks) || blocks.length === 0) return null;
+
+    // Find last text block and inject
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const textObj = (blocks[i] as Record<string, unknown>).text as Record<string, unknown> | undefined;
+      if (textObj && typeof textObj.content === 'string') {
+        textObj.content = formatInjection(ctx, textObj.content);
+
+        // Re-encode gRPC-Web frame
+        const payload = new TextEncoder().encode(JSON.stringify(json));
+        const frame = new Uint8Array(5 + payload.length);
+        frame[0] = flag;
+        frame[1] = (payload.length >> 24) & 0xff;
+        frame[2] = (payload.length >> 16) & 0xff;
+        frame[3] = (payload.length >> 8) & 0xff;
+        frame[4] = payload.length & 0xff;
+        frame.set(payload, 5);
+        return frame;
+      }
+    }
+    return null;
   },
 
   modifyRequestBody(body: Record<string, unknown>, ctx: InjectionContext): Record<string, unknown> {

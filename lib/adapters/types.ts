@@ -101,6 +101,20 @@ export interface PlatformAdapter {
   ): string | null;
 
   /**
+   * Determine whether a binary request body (e.g. gRPC-Web) should be intercepted.
+   */
+  shouldInterceptBinary?(url: string, body: Uint8Array): boolean;
+
+  /**
+   * Modify a binary request body to inject context.
+   * Returns the modified body, or null if injection failed.
+   */
+  modifyBinaryRequestBody?(
+    body: Uint8Array,
+    ctx: import('../profile').InjectionContext,
+  ): Uint8Array | null;
+
+  /**
    * Remove injection traces from a DOM subtree.
    * Called on initial load and on every DOM mutation.
    */

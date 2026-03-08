@@ -24,6 +24,8 @@ const SCRIPT_MATCHES = [
   '*://gemini.google.com/*',
   '*://aistudio.google.com/*',
   '*://kimi.moonshot.cn/*',
+  '*://kimi.com/*',
+  '*://www.kimi.com/*',
   '*://chat.qwen.ai/*',
   '*://tongyi.aliyun.com/*',
   '*://tongyi.com/*',
@@ -125,40 +127,31 @@ function setupDOMCleaner() {
     });
   };
 
-  // MutationObserver: synchronous element-level ghost-ml removal.
-  // The response-stream filter handles the primary cleanup at the source;
-  // this is a fallback for edge cases (SSR, EventSource, cached DOM, etc.).
+  // Deferred cleanup: during streaming, ghost-ml elements appear in the DOM
+  // via React rendering. Synchronous removal breaks React reconciliation.
+  // CSS hides them visually; we defer DOM cleanup until mutations settle.
+  let deferTimer = 0;
+  const scheduleDeferredClean = () => {
+    if (deferTimer) clearTimeout(deferTimer);
+    deferTimer = window.setTimeout(() => {
+      deferTimer = 0;
+      clean();
+    }, 2000);
+  };
+
+  // MutationObserver: detect ghost-ml elements and schedule cleanup.
+  // CSS (document_start) handles immediate visual hiding.
+  // DOM cleanup is deferred to avoid breaking framework reconciliation.
   const observer = new MutationObserver((mutations) => {
     let needsClean = false;
+    let hasGhostML = false;
 
     for (const m of mutations) {
       for (const node of m.addedNodes) {
         if (node instanceof HTMLElement) {
           const tag = node.tagName.toLowerCase();
           if (tag.includes('ghost-ml')) {
-            // Synchronous removal — don't let it paint even one frame
-            if (
-              tag === 'info-control-ghost-ml'
-              || tag === 'need-update-ghost-ml'
-              || tag === 'updated-user-bio-ghost-ml'
-              || tag === 'need-update-soul-ghost-ml'
-              || tag === 'updated-ai-soul-ghost-ml'
-              || tag === 'main-ghost-ml'
-            ) {
-              node.remove();
-            } else if (
-              tag === 'model-response-ghost-ml'
-              || tag === 'origin-user-input-ghost-ml'
-            ) {
-              // Unwrap: keep children, remove wrapper
-              const parent = node.parentNode;
-              if (parent) {
-                while (node.firstChild) parent.insertBefore(node.firstChild, node);
-                node.remove();
-              }
-            } else {
-              node.remove(); // unknown ghost-ml element — remove to be safe
-            }
+            hasGhostML = true;
           } else {
             needsClean = true;
           }
@@ -166,6 +159,7 @@ function setupDOMCleaner() {
       }
     }
 
+    if (hasGhostML) scheduleDeferredClean();
     if (needsClean) scheduleClean();
   });
 

@@ -23,6 +23,8 @@ const SCRIPT_MATCHES = [
   '*://gemini.google.com/*',
   '*://aistudio.google.com/*',
   '*://kimi.moonshot.cn/*',
+  '*://kimi.com/*',
+  '*://www.kimi.com/*',
   '*://chat.qwen.ai/*',
   '*://tongyi.aliyun.com/*',
   '*://tongyi.com/*',
@@ -192,6 +194,26 @@ export default defineContentScript({
                 wasInjected = true;
               }
             }
+          } else if (!body && adapter.shouldInterceptBinary && adapter.modifyBinaryRequestBody) {
+            // Binary body fallback (e.g. Kimi gRPC-Web)
+            let binaryBody: Uint8Array | undefined;
+            if (init?.body instanceof ArrayBuffer) {
+              binaryBody = new Uint8Array(init.body);
+            } else if (init?.body && ArrayBuffer.isView(init.body)) {
+              binaryBody = new Uint8Array(
+                (init.body as ArrayBufferView).buffer,
+                (init.body as ArrayBufferView).byteOffset,
+                (init.body as ArrayBufferView).byteLength,
+              );
+            }
+            if (binaryBody && adapter.shouldInterceptBinary(url, binaryBody)) {
+              const modified = adapter.modifyBinaryRequestBody(binaryBody, ctx);
+              if (modified) {
+                init = { ...init, body: modified };
+                console.log('[Qianyi] \u2705 Intercepted (binary):', url, `[${ctx.mode}]`);
+                wasInjected = true;
+              }
+            }
           }
         } else if (ctx && ctx.mode === 'time') {
           // Time-only mode
@@ -216,6 +238,7 @@ export default defineContentScript({
       }
 
       const response = await _fetch.call(this, input, init);
+
       try {
         return filterFetchResponse(response, wasInjected);
       } catch {
@@ -341,6 +364,11 @@ export default defineContentScript({
 
       const ct = response.headers.get('content-type') || '';
 
+      // Connect / gRPC-Web protocol: envelope-level ghost-ml filtering
+      if (ct.includes('connect+') || ct.includes('grpc')) {
+        return wasInjected ? wrapConnectFilter(response) : response;
+      }
+
       // Track 1: SSE stream filtering for injected requests
       if (wasInjected || ct.includes('event-stream')) {
         return wrapSSEFilter(response);
@@ -440,6 +468,152 @@ export default defineContentScript({
         statusText: response.statusText,
         headers,
       });
+    }
+
+    /* ── Connect / gRPC-Web envelope frame filter ── */
+
+    /**
+     * Filter a Connect streaming response at the envelope frame level.
+     *
+     * Connect streaming frames: [1B flags][4B big-endian length][JSON payload]
+     * We parse each frame's JSON, run GhostMLFilter on `content` string fields
+     * only, then re-encode the frame. JSON structure stays intact because
+     * the filter never sees raw JSON — only the string value inside `content`.
+     *
+     * Falls back to pass-through if the first byte isn't a valid Connect flag.
+     */
+    function wrapConnectFilter(response: Response): Response {
+      const filter = new GhostMLFilter();
+      let buf = new Uint8Array(0);
+      let infoReported = false;
+      let passthrough = false;
+
+      const ts = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          if (passthrough) {
+            controller.enqueue(chunk);
+            return;
+          }
+
+          buf = concatBytes(buf, chunk);
+
+          while (buf.length >= 5) {
+            const flag = buf[0];
+            // Valid Connect flags: 0 (data), 1 (compressed data), 2 (end-of-stream)
+            if (flag > 2) {
+              passthrough = true;
+              controller.enqueue(buf);
+              buf = new Uint8Array(0);
+              return;
+            }
+
+            const payloadLen = (buf[1] << 24) | (buf[2] << 16) | (buf[3] << 8) | buf[4];
+            if (payloadLen > 10 * 1024 * 1024) {
+              passthrough = true;
+              controller.enqueue(buf);
+              buf = new Uint8Array(0);
+              return;
+            }
+
+            if (buf.length < 5 + payloadLen) break; // incomplete frame
+
+            const framePayload = buf.slice(5, 5 + payloadLen);
+            buf = buf.slice(5 + payloadLen);
+
+            // End-of-stream frame — pass through unmodified
+            if (flag & 0x02) {
+              controller.enqueue(connectFrame(flag, framePayload));
+              continue;
+            }
+
+            // Parse JSON, filter content fields, re-encode
+            let outputPayload = framePayload;
+            try {
+              const text = new TextDecoder().decode(framePayload);
+              const json = JSON.parse(text);
+              if (filterConnectContent(json, filter)) {
+                outputPayload = new TextEncoder().encode(JSON.stringify(json));
+              }
+            } catch {
+              // Unparseable — pass through this frame
+            }
+
+            controller.enqueue(connectFrame(flag, outputPayload));
+
+            if (!infoReported && filter.infoControl) {
+              infoReported = true;
+              window.postMessage({ type: MSG.INFO_CONTROL, data: filter.infoControl }, '*');
+            }
+          }
+        },
+        flush(controller) {
+          if (buf.length > 0) controller.enqueue(buf);
+          if (!infoReported && filter.infoControl) {
+            window.postMessage({ type: MSG.INFO_CONTROL, data: filter.infoControl }, '*');
+          }
+        },
+      });
+
+      const headers = new Headers(response.headers);
+      headers.delete('content-length');
+
+      return new Response(response.body!.pipeThrough(ts), {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+
+    /** Encode a Connect envelope frame. */
+    function connectFrame(flag: number, payload: Uint8Array): Uint8Array {
+      const frame = new Uint8Array(5 + payload.length);
+      frame[0] = flag;
+      frame[1] = (payload.length >> 24) & 0xff;
+      frame[2] = (payload.length >> 16) & 0xff;
+      frame[3] = (payload.length >> 8) & 0xff;
+      frame[4] = payload.length & 0xff;
+      frame.set(payload, 5);
+      return frame;
+    }
+
+    /** Concatenate two Uint8Arrays. */
+    function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
+      const c = new Uint8Array(a.length + b.length);
+      c.set(a);
+      c.set(b, a.length);
+      return c;
+    }
+
+    /**
+     * Recursively filter `content` string fields through GhostMLFilter.
+     * Only touches fields named `content` — other string fields are left intact,
+     * preserving JSON structure even when the filter is in removing mode.
+     */
+    function filterConnectContent(obj: unknown, filter: GhostMLFilter): boolean {
+      if (!obj || typeof obj !== 'object') return false;
+      let modified = false;
+
+      if (Array.isArray(obj)) {
+        for (const item of obj) {
+          if (filterConnectContent(item, filter)) modified = true;
+        }
+        return modified;
+      }
+
+      const record = obj as Record<string, unknown>;
+      for (const key of Object.keys(record)) {
+        const val = record[key];
+        if (typeof val === 'string' && key === 'content') {
+          const filtered = filter.feed(val);
+          if (filtered !== val) {
+            record[key] = filtered;
+            modified = true;
+          }
+        } else if (typeof val === 'object' && val !== null) {
+          if (filterConnectContent(val, filter)) modified = true;
+        }
+      }
+      return modified;
     }
 
     /**

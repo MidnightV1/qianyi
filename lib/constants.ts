@@ -41,6 +41,8 @@ export const SUPPORTED_HOSTS = [
   'gemini.google.com',
   'aistudio.google.com',
   'kimi.moonshot.cn',
+  'kimi.com',
+  'www.kimi.com',
   'chat.qwen.ai',
   'tongyi.aliyun.com',
   'tongyi.com',
