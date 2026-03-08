@@ -173,6 +173,25 @@ export default defineContentScript({
 
             console.log('[Qianyi] ✅ Intercepted:', url, `[${ctx.mode}]`);
             wasInjected = true;
+          } else if (!body && adapter.shouldInterceptRaw && adapter.modifyRawRequestBody) {
+            // Raw body fallback (e.g. Gemini batchexecute via fetch)
+            let rawText: string | undefined;
+            if (typeof init?.body === 'string') rawText = init.body;
+            else if (input instanceof Request) {
+              try { rawText = await input.clone().text(); } catch { /* ignore */ }
+            }
+            if (rawText && adapter.shouldInterceptRaw(url, rawText)) {
+              const modified = adapter.modifyRawRequestBody(rawText, ctx);
+              if (modified) {
+                if (input instanceof Request && !init?.body) {
+                  input = new Request(input, { body: modified });
+                } else {
+                  init = { ...init, body: modified };
+                }
+                console.log('[Qianyi] ✅ Intercepted (raw):', url, `[${ctx.mode}]`);
+                wasInjected = true;
+              }
+            }
           }
         } else if (ctx && ctx.mode === 'time') {
           // Time-only mode
@@ -228,6 +247,20 @@ export default defineContentScript({
 
           if (parsed && adapter.shouldIntercept(url, parsed)) {
             isChatRequest = true;
+          }
+        }
+
+        // Raw body interception (non-JSON, e.g. Gemini batchexecute)
+        if (!isChatRequest && typeof body === 'string' && !parsed) {
+          if (adapter.shouldInterceptRaw?.(url, body)) {
+            const canInject = !!(ctx && ctx.mode !== 'off' && !isContextEmpty(ctx));
+            if (canInject) {
+              const modified = adapter.modifyRawRequestBody?.(body, ctx!);
+              if (modified) {
+                console.log('[Qianyi] ✅ Intercepted (XHR raw):', url, `[${ctx!.mode}]`);
+                return _xhrSend.call(this, modified);
+              }
+            }
           }
         }
 

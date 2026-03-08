@@ -86,6 +86,21 @@ export interface PlatformAdapter {
   ): string;
 
   /**
+   * Determine whether a non-JSON request body (e.g. URL-encoded form data)
+   * should be intercepted. Only needed for platforms with non-JSON APIs.
+   */
+  shouldInterceptRaw?(url: string, rawBody: string): boolean;
+
+  /**
+   * Modify a non-JSON request body to inject context.
+   * Returns the modified body string, or null if injection failed.
+   */
+  modifyRawRequestBody?(
+    rawBody: string,
+    ctx: import('../profile').InjectionContext,
+  ): string | null;
+
+  /**
    * Remove injection traces from a DOM subtree.
    * Called on initial load and on every DOM mutation.
    */

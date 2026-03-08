@@ -4,6 +4,70 @@ import type { InjectionContext } from '../profile';
 import { deepseekAdapter } from './deepseek';
 import { rewriteStandardSSE } from '../response-filter';
 
+/**
+ * Parse Gemini's batchexecute form body and locate the inner JSON string.
+ * Returns the parsed outer array, inner array, and a setter to write back changes.
+ */
+function parseBatchExecute(rawBody: string): {
+  params: URLSearchParams;
+  outer: unknown[];
+  inner: unknown[];
+  setInner: (s: string) => void;
+} | null {
+  try {
+    const params = new URLSearchParams(rawBody);
+    const fReq = params.get('f.req');
+    if (!fReq) return null;
+
+    const outer = JSON.parse(fReq) as unknown[];
+    if (!Array.isArray(outer)) return null;
+
+    let innerStr: string | null = null;
+    let setInner: ((s: string) => void) | null = null;
+
+    // Format 1: [null, "<inner-json>", ...]
+    if (typeof outer[1] === 'string') {
+      try {
+        JSON.parse(outer[1]);
+        innerStr = outer[1];
+        setInner = (s) => { outer[1] = s; };
+      } catch { /* not valid JSON */ }
+    }
+
+    // Format 2: [[[methodName, "<inner-json>", null, "generic"]]]
+    if (!innerStr) {
+      const rpc = (outer[0] as unknown[])?.[0] as unknown[] | undefined;
+      if (Array.isArray(rpc) && typeof rpc[1] === 'string') {
+        try {
+          JSON.parse(rpc[1]);
+          innerStr = rpc[1];
+          setInner = (s) => { rpc[1] = s; };
+        } catch { /* not valid JSON */ }
+      }
+    }
+
+    if (!innerStr || !setInner) return null;
+
+    const inner = JSON.parse(innerStr) as unknown[];
+    if (!Array.isArray(inner)) return null;
+
+    return { params, outer, inner, setInner };
+  } catch {
+    return null;
+  }
+}
+
+/** Check if the inner array looks like a Gemini chat request. */
+function isChatPayload(inner: unknown[]): boolean {
+  // inner[0] should be an array with a non-empty user message string at [0]
+  const firstSlot = inner[0] as unknown[] | undefined;
+  if (!Array.isArray(firstSlot)) return false;
+  const msg = firstSlot[0];
+  if (typeof msg !== 'string' || !msg) return false;
+  // inner[2] should be an array (conversation ID slot — may be empty strings for new chats)
+  return Array.isArray(inner[2]);
+}
+
 function injectToContentsArray(contents: unknown[], injected: string): boolean {
   for (let index = contents.length - 1; index >= 0; index--) {
     const item = contents[index] as Record<string, unknown>;
@@ -132,6 +196,33 @@ export const geminiAdapter: PlatformAdapter = {
     parseState: Record<string, unknown> & { partial: string },
   ): string {
     return rewriteStandardSSE(sseChunk, contentFilter, parseState);
+  },
+
+  shouldInterceptRaw(url: string, rawBody: string): boolean {
+    if (!rawBody.includes('f.req=')) return false;
+    let pathname = '';
+    try {
+      pathname = new URL(url, 'https://gemini.google.com').pathname;
+    } catch {
+      pathname = url;
+    }
+    if (!pathname.includes('batchexecute') && !pathname.includes('BardFrontendService')) return false;
+
+    const parsed = parseBatchExecute(rawBody);
+    return parsed !== null && isChatPayload(parsed.inner);
+  },
+
+  modifyRawRequestBody(rawBody: string, ctx: InjectionContext): string | null {
+    const parsed = parseBatchExecute(rawBody);
+    if (!parsed || !isChatPayload(parsed.inner)) return null;
+
+    const { params, outer, inner, setInner } = parsed;
+    const userMessage = (inner[0] as unknown[])[0] as string;
+    (inner[0] as unknown[])[0] = formatInjection(ctx, userMessage);
+
+    setInner(JSON.stringify(inner));
+    params.set('f.req', JSON.stringify(outer));
+    return params.toString();
   },
 
   cleanDOM(root: Element): void {
